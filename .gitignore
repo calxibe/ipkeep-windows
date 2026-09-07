@@ -1,0 +1,30 @@
+**/bin/
+**/obj/
+dist/
+.vs/
+*.user
+*.token
+settings.json
+
+# Local credentials and runtime data
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+token.bin
+connection.bin
+*.log
+*.log.*
+status.json
+
+# Private historical material and local native screenshots
+/reference/
+/docs/screenshots/
+
+# Editor and temporary files
+.idea/
+*.suo
+*.tmp
+*.sync-conflict-*

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><AssemblyName>IPKeep</AssemblyName><RootNamespace>IPKeep.Desktop</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest><ApplicationIcon>Assets/IPKeep.ico</ApplicationIcon>
+    <UseWinUI>true</UseWinUI><EnableMsixTooling>true</EnableMsixTooling><WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSDKDeploymentManagerInitialize>false</WindowsAppSDKDeploymentManagerInitialize>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier><PlatformTarget>x64</PlatformTarget><Platforms>x64</Platforms>
+    <SelfContained>true</SelfContained><PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <ProjectReference Include="../IPKeep.Core/IPKeep.Core.csproj" />
+    <Content Include="Assets/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

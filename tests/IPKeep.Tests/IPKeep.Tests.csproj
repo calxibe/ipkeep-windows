@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/IPKeep.Core/IPKeep.Core.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/IPKeep.Desktop/ActivityRow.cs" Link="ActivityRow.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/IPKeep.Desktop/SavedTokenRestore.cs" Link="SavedTokenRestore.cs" /></ItemGroup>
+</Project>
