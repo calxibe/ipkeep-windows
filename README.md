@@ -4,6 +4,8 @@ A native WinUI 3 app and Windows background service that keep your [IPKeep](http
 
 **Version 1.0.0** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
+[Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
+
 This repository contains the Windows client and service. Build from source using the instructions below. A signed installer, automatic application updates, and Microsoft Store distribution are not available yet. Background DNS updates are already supported.
 
 ![IPKeep Overview with fictional example addresses](docs/images/overview.png)
@@ -96,7 +98,7 @@ The service verifies its installed location and permissions before starting and 
 - `tests/IPKeep.Tests`: isolated executable test suite with fake HTTP/resolver/update services and temporary files.
 - `docs/images`: illustrative app previews containing fictional data.
 
-Build tools: .NET 10 SDK and Windows desktop/WinUI build prerequisites, including the Windows SDK. The project pins Windows App SDK 2.4.0, listed as stable in [Microsoft's downloads](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads). Distribution follows [Microsoft's unpackaged WinUI guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/unpackage-winui-app).
+Build tools: Windows, PowerShell 7, .NET SDK 10.0.400 (pinned in `global.json`), and Windows desktop/WinUI build prerequisites, including the Windows SDK. The project pins Windows App SDK 2.4.0, listed as stable in [Microsoft's downloads](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads). Distribution follows [Microsoft's unpackaged WinUI guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/unpackage-winui-app).
 
 ```powershell
 git clone https://github.com/calxibe/ipkeep-windows.git
@@ -118,6 +120,15 @@ Building never installs, starts, or stops a service and does not send production
 The initial release has 48 isolated tests. These cover HTTP/token boundaries, hostname selection, provider behavior, storage and encryption, scheduling, log handling, and Activity timestamp formatting. Native layouts and live anonymous IPv4 discovery have also been inspected during development. Automated tests do not represent full service-installation or GUI acceptance testing.
 
 Before broad installer distribution, remaining checks include administrator installation, reboot, upgrade/rollback, removal, service-maintenance visibility for existing installations, and live token restoration across launches. Code signing and a full desktop installer remain planned work.
+
+## Removing IPKeep
+
+1. Open Settings, choose **Allow changes**, and approve the Windows administrator prompt.
+2. Expand **Service maintenance** and choose **Remove service**. This stops and unregisters the background service; it retains its files and data.
+3. Close every IPKeep desktop window. You can now delete the extracted application folder and the installed `%ProgramFiles%/IPKeep` service files (administrator access is required for Program Files).
+4. If you also want to erase local settings, tokens, and logs, delete `%ProgramData%/IPKeep` with administrator access and `%LOCALAPPDATA%/IPKeep` for each Windows user who ran the app. These deletions cannot be undone by IPKeep.
+
+Removing the client does not delete your IPKeep account or hostnames. Revoke its token in the admin panel if it should no longer authorize updates from any device.
 
 ## Contributing and support
 
