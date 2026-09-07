@@ -22,4 +22,6 @@ The [GitHub workflow](https://github.com/calxibe/ipkeep-windows/blob/main/.githu
 
 Only project-owned executables and assemblies are intended for signing: `IPKeep.exe`, `IPKeep.dll`, `IPKeep.Core.dll`, `service/IPKeep.Service.exe`, `service/IPKeep.Service.dll`, and `service/IPKeep.Core.dll`. Bundled Microsoft runtime and other third-party files retain their upstream signatures and licenses; they must not be re-signed as IPKeep. An installer is not yet included.
 
+The self-contained Windows build includes Windows App SDK redistributables under Microsoft terms, as well as .NET components. Their available license files and notices are included in the preview. SignPath Foundation must confirm that these platform dependencies are acceptable under its system-library exception; the project's MIT license does not relicense them.
+
 See the [Windows client privacy policy](PRIVACY.md) for network requests and local data, and the [IPKeep service privacy policy](https://ipkeep.net/privacy) for hosted account data.

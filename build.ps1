@@ -19,6 +19,7 @@ try {
     foreach ($preview in @('overview.png', 'settings.png', 'activity.png')) {
         Copy-Item -LiteralPath (Join-Path 'docs/images' $preview) -Destination (Join-Path 'dist/IPKeep/docs/images' $preview)
     }
+    & (Join-Path $PSScriptRoot 'scripts/copy-notices.ps1')
     Write-Host "Built $PSScriptRoot\dist\IPKeep\IPKeep.exe"
     Write-Host 'Keep the complete folder together. Building does not install or start a service.'
 }

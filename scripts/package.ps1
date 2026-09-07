@@ -7,7 +7,7 @@ $releaseDirectory = Join-Path $repositoryRoot 'dist/releases'
 [xml]$properties = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props') -Raw
 $version = [string]$properties.Project.PropertyGroup.Version
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid product version.' }
-foreach ($required in @('IPKeep.exe', 'IPKeep.dll', 'IPKeep.Core.dll', 'service/IPKeep.Service.exe', 'service/IPKeep.Service.dll', 'service/IPKeep.Core.dll', 'LICENSE', 'README.md', 'PRIVACY.md', 'CODE_SIGNING.md')) {
+foreach ($required in @('IPKeep.exe', 'IPKeep.dll', 'IPKeep.Core.dll', 'service/IPKeep.Service.exe', 'service/IPKeep.Service.dll', 'service/IPKeep.Core.dll', 'LICENSE', 'README.md', 'PRIVACY.md', 'CODE_SIGNING.md', 'third-party/README.md')) {
     if (-not (Test-Path -LiteralPath (Join-Path $publishDirectory $required) -PathType Leaf)) { throw "Missing published file: $required" }
 }
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $publishDirectory -File -Recurse | Where-Object {

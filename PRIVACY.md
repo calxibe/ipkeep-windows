@@ -10,7 +10,7 @@ IP lookups send anonymous HTTPS requests. The destination can see the connection
 
 When the user verifies a token or opens Settings with a remembered token, the client sends that token to `https://api.ipkeep.net/hosts` to retrieve the account's active hostnames. After the user saves and enables updates, the background service sends the token, selected hostname, and eligible public addresses to `https://api.ipkeep.net/update`. These are the only authenticated operations. Tokens are sent in the Authorization header over HTTPS, never in URLs.
 
-The service runs independently of the desktop window and performs periodic checks until paused or removed. Pause updates stops those service checks; closing the desktop stops its foreground requests. The client contains no advertising, analytics, or automatic crash-report uploads. Website links open the user's browser and are governed by the destination's policy.
+The service runs independently of the desktop window and performs periodic checks until paused or removed. Pause updates stops those service checks; closing the desktop stops its foreground requests. IPKeep's own code contains no advertising, analytics, or automatic crash-report uploads. Bundled Microsoft runtimes and Windows may have their own diagnostics and data collection, governed by their settings, license terms, and the [Microsoft privacy statement](https://privacy.microsoft.com/privacystatement). Runtime license files and available notices are included under `third-party` in the download. Website links open the user's browser and are governed by the destination's policy.
 
 Provider privacy information:
 

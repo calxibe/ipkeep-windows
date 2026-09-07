@@ -138,4 +138,4 @@ For account help or to report a security issue privately, use [IPKeep support](h
 
 ## License
 
-The project is released under the [MIT License](LICENSE). Referenced third-party packages retain their own licenses. This repository does not grant access to the hosted IPKeep service; users supply their own account token.
+IPKeep's own source is released under the [MIT License](LICENSE). Third-party packages retain their own licenses; bundled Windows App SDK redistributables are covered by Microsoft terms. The build includes available dependency license files, notices, and NuGet license metadata under `third-party` in the download. This repository does not grant access to the hosted IPKeep service; users supply their own account token.
