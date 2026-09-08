@@ -636,7 +636,7 @@ Test("A rejected token stops scheduling instead of retrying every five minutes f
 
 Test("Installer accepts only fixed operations without paths or credentials", () =>
 {
-    foreach (string operation in new[] { "--installer-check", "--installer-upgrade", "--installer-remove" })
+    foreach (string operation in new[] { "--installer-check", "--installer-provision", "--installer-upgrade", "--installer-remove" })
     {
         Assert(InstallerOperations.IsCommand([operation]));
         Assert(!InstallerOperations.IsCommand([operation, "C:\\arbitrary"]));

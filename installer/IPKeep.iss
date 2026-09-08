@@ -82,8 +82,8 @@ var
   Code: Integer;
 begin
   Result := -1;
-  if Exec(Filename, Operation, ExtractFileDir(Filename), SW_HIDE,
-      ewWaitUntilTerminated, Code) then Result := Code;
+  if ExecAndLogOutput(Filename, Operation, ExtractFileDir(Filename), SW_SHOWNORMAL,
+      ewWaitUntilTerminated, Code, nil) then Result := Code;
   Log(Format('IPKeep helper %s returned %d', [Operation, Result]));
 end;
 
@@ -120,7 +120,9 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    UpgradeFailed := RunHelper(ExpandConstant('{app}\service\IPKeep.Service.exe'), '--installer-upgrade') <> 0;
+    UpgradeFailed := RunHelper(ExpandConstant('{tmp}\') + '{app}\service\IPKeep.Service.exe', '--installer-provision') <> 0;
+    if not UpgradeFailed then
+      UpgradeFailed := RunHelper(ExpandConstant('{app}\service\IPKeep.Service.exe'), '--installer-upgrade') <> 0;
     if UpgradeFailed then
       SuppressibleMsgBox('The desktop was installed, but the background service could not be updated. The previous service files are retained when rollback succeeds. Open IPKeep Settings and use Service maintenance to repair it before continuing.', mbError, MB_OK, IDOK);
   end;

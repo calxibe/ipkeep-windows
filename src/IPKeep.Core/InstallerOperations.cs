@@ -1,3 +1,6 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace IPKeep.Core;
 
 // Invoked by the bundled service executable before it enters the Windows service loop.
@@ -7,7 +10,7 @@ public static class InstallerOperations
     public static string DesktopDirectory => Path.Combine(AppPaths.InstallRoot, "app");
 
     public static bool IsCommand(string[] arguments) => arguments.Length == 1 &&
-        arguments[0] is "--installer-check" or "--installer-upgrade" or "--installer-remove";
+        arguments[0] is "--installer-check" or "--installer-provision" or "--installer-upgrade" or "--installer-remove";
 
     public static int Run(string[] arguments, string executableDirectory)
     {
@@ -19,7 +22,18 @@ public static class InstallerOperations
             CheckTree(AppPaths.InstallRoot);
             if (Directory.Exists(AppPaths.InstallRoot)) DeploymentSecurity.ValidateFile(AppPaths.InstallRoot);
             if (Directory.Exists(DesktopDirectory)) DeploymentSecurity.ValidateFile(DesktopDirectory);
-            if (arguments[0] == "--installer-check") return 0;
+            if (arguments[0] == "--installer-check")
+            {
+                // Explicit ownership avoids relying on the installer account's default owner.
+                DeploymentSecurity.SecureDirectory(AppPaths.InstallRoot);
+                DeploymentSecurity.SecureDirectory(DesktopDirectory);
+                return 0;
+            }
+            if (arguments[0] == "--installer-provision")
+            {
+                ProtectBundle(DesktopDirectory);
+                return 0;
+            }
 
             // Only the helper installed in the fixed, protected app bundle can mutate a service.
             string expected = Path.Combine(DesktopDirectory, "service");
@@ -47,11 +61,32 @@ public static class InstallerOperations
                 }
             return 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or
+            System.ComponentModel.Win32Exception or System.TimeoutException or System.ServiceProcess.TimeoutException)
         {
-            Console.Error.WriteLine($"IPKeep installer operation failed ({ex.GetType().Name}). Check the installation permissions and Windows service status.");
+            // These operations never read a token or connection, so diagnostics contain only deployment errors.
+            Console.Error.WriteLine($"IPKeep installer operation failed ({ex.GetType().Name}): {ex.Message}");
             return arguments[0] switch { "--installer-check" => 10, "--installer-upgrade" => 20, _ => 30 };
         }
+    }
+
+    private static void ProtectBundle(string directory)
+    {
+        DeploymentSecurity.SecureDirectory(directory);
+        foreach (string file in Directory.EnumerateFiles(directory))
+        {
+            DeploymentSecurity.RejectLinks(file);
+            var security = new FileSecurity();
+            security.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+            security.SetAccessRuleProtection(true, false);
+            foreach (var type in new[] { WellKnownSidType.BuiltinAdministratorsSid, WellKnownSidType.LocalSystemSid })
+                security.AddAccessRule(new(new SecurityIdentifier(type, null), FileSystemRights.FullControl, AccessControlType.Allow));
+            foreach (var type in new[] { WellKnownSidType.BuiltinUsersSid, WellKnownSidType.LocalServiceSid })
+                security.AddAccessRule(new(new SecurityIdentifier(type, null), FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+            new FileInfo(file).SetAccessControl(security);
+            DeploymentSecurity.ValidateFile(file);
+        }
+        foreach (string child in Directory.EnumerateDirectories(directory)) ProtectBundle(child);
     }
 
     public static bool IsServiceDirectoryName(string name)

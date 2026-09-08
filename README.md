@@ -15,7 +15,7 @@ This repository contains the Windows client and service. An **unsigned beta inst
 ## Features
 
 - Token-based setup with automatic selection for one hostname, or a checkbox dropdown for up to five hostnames.
-- Automatic IP checks, five-minute retries after failures, and pause/resume controls.
+- Automatic IP checks, backoff after failures, and pause/resume controls.
 - Choice of IPKeep, Amazon Check IP, ipify, or ident.me, with live IPv4 comparisons for VPN users.
 - IPv4 and optional IPv6 updates, depending on the selected provider.
 - Encrypted token storage using Windows DPAPI and restricted file permissions.
@@ -73,7 +73,7 @@ The stable `IpLookupProviderId` is saved with the connection and its public sett
 
 DNS resolution, sockets, and connection pools are kept separate for IPv4/IPv6. Discovery bypasses HTTP proxies, follows the computer's OS/VPN routes, disables redirects/cookies, and retains HTTPS certificate validation. Choosing a provider does not change VPN routing. Null, invalid, private, and wrong-family values are rejected and never clear saved addresses. There are no automatic provider fallbacks or direct Cloudflare DNS API requests; discovery failures use the normal five-minute retry. The default lookup timeout is twenty seconds; dropdown probes use ten seconds.
 
-Every start checks immediately. Successful and ignored checks use the configured interval; failed or partial checks retry after five minutes. Delays begin when a check finishes. A failed hostname does not prevent the other hostnames from updating; a rejected token stops redundant requests for the remaining hosts. A missing enabled address family still allows the other family to update and schedules a retry. Cancellation stops in-flight requests on service shutdown.
+Every start checks immediately. Successful and ignored checks use the configured interval; failures begin with a five-minute retry and back off up to an hour, bounded by the configured interval. Delays begin when a check finishes. A failed hostname does not prevent the other hostnames from updating; a rejected token stops redundant requests for the remaining hosts and pauses timed retries until the user saves a new token or requests a check. A missing enabled address family still allows the other family to update and schedules a retry. Cancellation stops in-flight requests on service shutdown.
 
 ## Local storage and service permissions
 

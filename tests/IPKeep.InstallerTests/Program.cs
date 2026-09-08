@@ -74,11 +74,11 @@ Assert(Setup("paused-upgrade") == 0, "Paused service upgrade failed.");
 CheckMode(ServiceControllerStatus.Stopped, 3); CheckData();
 Pass("Paused service remains stopped and manual after an upgrade");
 
-using (var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\IPKeep", writable: true)) key!.SetValue("Start", 4);
+Assert(Run(Path.Combine(Environment.SystemDirectory, "sc.exe"), "config", "IPKeep", "start=", "disabled") == 0, "Cannot disable fixture service.");
 Assert(Setup("disabled-upgrade") == 0, "Disabled service upgrade failed.");
 CheckMode(ServiceControllerStatus.Stopped, 4); CheckData();
 Pass("Disabled service remains disabled after an upgrade");
-using (var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\IPKeep", writable: true)) key!.SetValue("Start", 3);
+Assert(Run(Path.Combine(Environment.SystemDirectory, "sc.exe"), "config", "IPKeep", "start=", "demand") == 0, "Cannot restore fixture service mode.");
 
 // Block the directory swap. The installer must report failure, retaining the prior service.
 string serviceHash = Hash(AppPaths.ServiceExecutable);
