@@ -4,23 +4,87 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries><XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" /></ResourceDictionary.MergedDictionaries>
-            <SolidColorBrush x:Key="BrandBlue" Color="#285FD5" />
-            <SolidColorBrush x:Key="Muted" Color="#64748B" />
-            <SolidColorBrush x:Key="Ink" Color="#1E3044" />
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="PageBackground" Color="#F6F8FB" />
+                    <SolidColorBrush x:Key="Surface" Color="White" />
+                    <SolidColorBrush x:Key="SurfaceBorder" Color="#E5EAF0" />
+                    <SolidColorBrush x:Key="RowBorder" Color="#EEF1F5" />
+                    <SolidColorBrush x:Key="TableHeader" Color="#F8FAFC" />
+                    <SolidColorBrush x:Key="ActivityHover" Color="#EAF0FA" />
+                    <SolidColorBrush x:Key="BrandBlue" Color="#285FD5" />
+                    <SolidColorBrush x:Key="Muted" Color="#64748B" />
+                    <SolidColorBrush x:Key="Ink" Color="#1E3044" />
+                    <SolidColorBrush x:Key="SelectedNavigation" Color="#EBF1FD" />
+                    <SolidColorBrush x:Key="StatusWarning" Color="#B46E0A" />
+                    <SolidColorBrush x:Key="StatusSuccess" Color="#188055" />
+                    <Color x:Key="HostnameCheckColor">#285FD5</Color>
+                    <Color x:Key="HostnameCheckmarkColor">White</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="PageBackground" Color="#111827" />
+                    <SolidColorBrush x:Key="Surface" Color="#1B2431" />
+                    <SolidColorBrush x:Key="SurfaceBorder" Color="#344153" />
+                    <SolidColorBrush x:Key="RowBorder" Color="#2C3748" />
+                    <SolidColorBrush x:Key="TableHeader" Color="#202C3C" />
+                    <SolidColorBrush x:Key="ActivityHover" Color="#2C3E58" />
+                    <SolidColorBrush x:Key="BrandBlue" Color="#8CB1FF" />
+                    <SolidColorBrush x:Key="Muted" Color="#A7B6CC" />
+                    <SolidColorBrush x:Key="Ink" Color="#F0F4FA" />
+                    <SolidColorBrush x:Key="SelectedNavigation" Color="#283C5B" />
+                    <SolidColorBrush x:Key="StatusWarning" Color="#F2BF68" />
+                    <SolidColorBrush x:Key="StatusSuccess" Color="#65D5A3" />
+                    <Color x:Key="HostnameCheckColor">#8CB1FF</Color>
+                    <Color x:Key="HostnameCheckmarkColor">#111827</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="PageBackground" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="Surface" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="SurfaceBorder" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="RowBorder" Color="{ThemeResource SystemColorGrayTextColor}" />
+                    <SolidColorBrush x:Key="TableHeader" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="ActivityHover" Color="{ThemeResource SystemColorWindowTextColor}" Opacity="0.15" />
+                    <SolidColorBrush x:Key="BrandBlue" Color="{ThemeResource SystemColorHotlightColor}" />
+                    <SolidColorBrush x:Key="Muted" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="Ink" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="SelectedNavigation" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="StatusWarning" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="StatusSuccess" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <StaticResource x:Key="HostnameCheckColor" ResourceKey="SystemColorHighlightColor" />
+                    <StaticResource x:Key="HostnameCheckmarkColor" ResourceKey="SystemColorHighlightTextColor" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
             <Style x:Key="Card" TargetType="Border">
-                <Setter Property="Background" Value="White" /><Setter Property="BorderBrush" Value="#E5EAF0" />
+                <Setter Property="Background" Value="{ThemeResource Surface}" /><Setter Property="BorderBrush" Value="{ThemeResource SurfaceBorder}" />
                 <Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="8" /><Setter Property="Padding" Value="24" />
             </Style>
             <Style x:Key="SectionTitle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="20" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontSize" Value="20" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{ThemeResource Ink}" />
             </Style>
             <Style x:Key="PageTitle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="30" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontSize" Value="30" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{ThemeResource Ink}" />
             </Style>
             <Style x:Key="NavButton" TargetType="Button">
                 <Setter Property="HorizontalAlignment" Value="Stretch" /><Setter Property="HorizontalContentAlignment" Value="Left" />
                 <Setter Property="Padding" Value="16,12" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
                 <Setter Property="FontSize" Value="15" />
+                <Setter Property="Foreground" Value="{ThemeResource Muted}" />
+            </Style>
+            <Style x:Key="SelectedNavButton" TargetType="Button" BasedOn="{StaticResource NavButton}">
+                <Setter Property="Background" Value="{ThemeResource SelectedNavigation}" />
+                <Setter Property="Foreground" Value="{ThemeResource BrandBlue}" />
+            </Style>
+            <Style x:Key="NeutralStatusDot" TargetType="Ellipse"><Setter Property="Fill" Value="{ThemeResource Muted}" /></Style>
+            <Style x:Key="WarningStatusDot" TargetType="Ellipse"><Setter Property="Fill" Value="{ThemeResource StatusWarning}" /></Style>
+            <Style x:Key="SuccessStatusDot" TargetType="Ellipse"><Setter Property="Fill" Value="{ThemeResource StatusSuccess}" /></Style>
+            <Style x:Key="ActivityRow" TargetType="Border">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="{ThemeResource RowBorder}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="12,5,28,5" />
+            </Style>
+            <Style x:Key="HoveredActivityRow" TargetType="Border" BasedOn="{StaticResource ActivityRow}">
+                <Setter Property="Background" Value="{ThemeResource ActivityHover}" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

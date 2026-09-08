@@ -4,10 +4,8 @@ using System.ServiceProcess;
 using System.Security.Cryptography;
 using System.Text.Json;
 using IPKeep.Core;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
 namespace IPKeep.Desktop;
@@ -48,6 +46,7 @@ public sealed partial class MainWindow : Window
         AppUpdateBanner.CloseButtonClick += (_, _) => dismissedAppVersion = availableAppRelease?.Version.Text;
         AppWindow.Resize(new SizeInt32(1100, 850));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "IPKeep.ico"));
+        InitializeTheme();
         AccessBanner.IsOpen = !DeploymentSecurity.IsAdministrator;
         SetEditingState(DeploymentSecurity.IsAdministrator);
         RepairButton.IsEnabled = RemoveButton.IsEnabled = DeploymentSecurity.IsAdministrator;
@@ -59,7 +58,7 @@ public sealed partial class MainWindow : Window
         appUpdateTimer.Tick += async (_, _) => await CheckAppUpdatesAsync();
         appUpdateTimer.Start();
         Root.Loaded += InitialAddressLookup;
-        Closed += (_, _) => { windowClosed = true; refresh.Stop(); appUpdateTimer.Stop(); lookupProbes.Cancel(); windowLifetime.Cancel(); windowLifetime.Dispose(); };
+        Closed += (_, _) => { windowClosed = true; StopWatchingTheme(); refresh.Stop(); appUpdateTimer.Stop(); lookupProbes.Cancel(); windowLifetime.Cancel(); windowLifetime.Dispose(); };
     }
 
     private async void InitialAddressLookup(object sender, RoutedEventArgs e)
@@ -254,7 +253,7 @@ public sealed partial class MainWindow : Window
         AccessBanner.IsOpen = page != "app-updates" && !DeploymentSecurity.IsAdministrator;
         AppUpdateBanner.IsOpen = page != "app-updates" && availableAppRelease is not null && dismissedAppVersion != availableAppRelease.Version.Text;
         foreach (var (button, name) in new[] { (OverviewNav, "overview"), (SettingsNav, "settings"), (ActivityNav, "activity"), (AppUpdatesNav, "app-updates") })
-        { button.Background = new SolidColorBrush(name == page ? ColorHelper.FromArgb(255, 235, 241, 253) : Colors.Transparent); button.Foreground = new SolidColorBrush(name == page ? ColorHelper.FromArgb(255, 40, 95, 213) : ColorHelper.FromArgb(255, 100, 116, 139)); }
+            button.Style = (Style)Application.Current.Resources[name == page ? "SelectedNavButton" : "NavButton"];
     }
     private void Overview_Click(object sender, RoutedEventArgs e) => ShowPage("overview");
     private async void Settings_Click(object sender, RoutedEventArgs e) => await OpenSettingsAsync();
@@ -431,11 +430,6 @@ public sealed partial class MainWindow : Window
         }
     });
 
-    // Reused across ticks; a new brush per refresh churns the UI thread for no visible gain.
-    private static readonly SolidColorBrush GreyDot = new(ColorHelper.FromArgb(255, 100, 116, 139));
-    private static readonly SolidColorBrush AmberDot = new(ColorHelper.FromArgb(255, 180, 110, 10));
-    private static readonly SolidColorBrush GreenDot = new(ColorHelper.FromArgb(255, 24, 128, 85));
-
     // Value equality lets the list keep its containers when nothing about the hosts changed.
     private sealed record HostStatusRow(string Hostname, string Message);
 
@@ -480,7 +474,7 @@ public sealed partial class MainWindow : Window
             bool fullySkipped = snapshot.LastCheck is { Skipped: true, Hosts.Length: 0 };
             StatusTitle.Text = !configured ? "Keep your connections current." : !running ? "Ready when you are." : attention ? "Your connection needs attention." : fullySkipped ? "Update skipped on this network." : pendingDns ? "IP recorded. DNS publishing pending." : snapshot.LastCheck?.Success == true ? "Your connection is up to date." : "Getting your connection ready.";
             StatusMessage.Text = !configured ? "Add your IPKeep API token in Settings to connect your hostnames." : !running ? "Enable updates to keep these hostnames current in the background." : snapshot.Message;
-            StatusDot.Fill = !running || fullySkipped ? GreyDot : attention || pendingDns ? AmberDot : GreenDot;
+            StatusDot.Style = (Style)Application.Current.Resources[!running || fullySkipped ? "NeutralStatusDot" : attention || pendingDns ? "WarningStatusDot" : "SuccessStatusDot"];
             PrimaryAction.Content = !configured ? "Set up IPKeep" : running ? "Check now" : "Enable updates";
             PrimaryAction.IsEnabled = !busy && (!running || DeploymentSecurity.IsAdministrator) && snapshot.State != "Checking";
             // A stale saved Checking state must not disable setup after a crash/stop.
