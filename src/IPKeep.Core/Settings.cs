@@ -6,6 +6,7 @@ namespace IPKeep.Core;
 
 public sealed record ClientSettings
 {
+    public const int MaximumHostnames = 5;
     public string[] Hostnames { get; init; } = [];
     public int IntervalMinutes { get; init; } = 360;
     public bool EnableIPv6 { get; init; }
@@ -14,8 +15,11 @@ public sealed record ClientSettings
 
     public ClientSettings Validate()
     {
-        if (Hostnames is null || Hostnames.Length is < 1 or > 20)
-            throw new SettingsException("Enter between 1 and 20 hostnames created on the IPKeep website.");
+        if (Hostnames is null || Hostnames.Length == 0)
+            throw new SettingsException("Choose between 1 and 5 hostnames from your IPKeep account.");
+        var names = Hostnames.Select(NormalizeHostname).Distinct().ToArray();
+        if (names.Length > MaximumHostnames)
+            throw new SettingsException("Choose at most 5 hostnames for this computer.");
         if (IntervalMinutes is < 1 or > 1440)
             throw new SettingsException("Choose a check interval between 1 and 1,440 minutes.");
         if (IgnoredNetworks is null || IgnoredNetworks.Length > 100)
@@ -23,7 +27,6 @@ public sealed record ClientSettings
         var provider = IpLookupProviders.Get(IpLookupProviderId);
         if (EnableIPv6 && !provider.SupportsIPv6)
             throw new SettingsException("This IP lookup service supports IPv4 only. Turn off IPv6 updates or choose another service.");
-        var names = Hostnames.Select(NormalizeHostname).Distinct().ToArray();
         foreach (var network in IgnoredNetworks) IpNetwork.Parse(network);
         return this with { Hostnames = names, IgnoredNetworks = IgnoredNetworks.Select(x => x.Trim()).Where(x => x.Length > 0).ToArray() };
     }

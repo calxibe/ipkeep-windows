@@ -4,7 +4,9 @@ using System.Net;
 namespace IPKeep.Core;
 
 public sealed record HostResult(string Hostname, bool Success, bool DnsUpdated, string Message);
-public sealed record CheckResult(DateTimeOffset CheckedAt, bool Success, bool Skipped, string? IPv4, string? IPv6, string Message, HostResult[] Hosts);
+// AuthenticationRejected is last with a default so existing construction sites and saved
+// status files keep working. It carries the one failure the schedule must not keep retrying.
+public sealed record CheckResult(DateTimeOffset CheckedAt, bool Success, bool Skipped, string? IPv4, string? IPv6, string Message, HostResult[] Hosts, bool AuthenticationRejected = false);
 
 public sealed class CheckEngine(IPublicIpResolver resolver, IUpdateClient client, IActivityLog log)
 {
@@ -57,9 +59,13 @@ public sealed class CheckEngine(IPublicIpResolver resolver, IUpdateClient client
                 }
             }
             bool success = !detectionFailed && results.All(x => x.Success);
-            string summary = !success ? "Some updates need attention. Retrying in 5 minutes." : results.Any(x => !x.DnsUpdated) ? "IP address recorded. DNS publishing is pending on IPKeep." : "Your hostnames are up to date.";
-            log.Write(success ? "INFO" : "WARN", $"Check completed: success={success}; elapsed_ms={watch.ElapsedMilliseconds}. {summary}");
-            return new(DateTimeOffset.Now, success, skipped, ipv4, ipv6, summary, results.ToArray());
+            string summary = authFailed
+                ? "IPKeep rejected the token. Updates are paused until you save a valid token."
+                : !success ? "Some updates need attention. Retrying shortly."
+                : results.Any(x => !x.DnsUpdated) ? "IP address recorded. DNS publishing is pending on IPKeep."
+                : "Your hostnames are up to date.";
+            log.Write(success ? "INFO" : "WARN", $"Check completed: success={success}; auth_rejected={authFailed}; elapsed_ms={watch.ElapsedMilliseconds}. {summary}");
+            return new(DateTimeOffset.Now, success, skipped, ipv4, ipv6, summary, results.ToArray(), authFailed);
         }
         finally { gate.Release(); }
     }
@@ -67,5 +73,25 @@ public sealed class CheckEngine(IPublicIpResolver resolver, IUpdateClient client
 
 public static class CheckSchedule
 {
-    public static TimeSpan Delay(bool success, int intervalMinutes) => TimeSpan.FromMinutes(success ? intervalMinutes : 5);
+    public const int FirstRetryMinutes = 5;
+    public const int MaximumRetryMinutes = 60;
+
+    /// <summary>
+    /// How long to wait before the next check, or null to stop scheduling entirely.
+    /// </summary>
+    /// <remarks>
+    /// A rejected token is not transient: retrying cannot fix it, and a machine left running
+    /// with a revoked token would otherwise send a rejected request every five minutes for as
+    /// long as it stays on. That case parks until someone saves a token or asks to check now.
+    /// Other failures back off 5, 10, 20, 40 minutes, capped at both an hour and the interval
+    /// the user chose, so a short outage still recovers quickly and a long one stops hammering.
+    /// </remarks>
+    public static TimeSpan? Delay(bool success, int intervalMinutes, int consecutiveFailures = 1, bool authenticationRejected = false)
+    {
+        if (success) return TimeSpan.FromMinutes(intervalMinutes);
+        if (authenticationRejected) return null;
+        int steps = Math.Clamp(consecutiveFailures, 1, 10) - 1;
+        int minutes = Math.Min(FirstRetryMinutes * (1 << steps), MaximumRetryMinutes);
+        return TimeSpan.FromMinutes(Math.Min(minutes, Math.Max(1, intervalMinutes)));
+    }
 }

@@ -38,6 +38,22 @@ public static class FileStore
     }
     public static void WriteJson<T>(string path, T value) => AtomicWrite(path, JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions));
     public static T? ReadJson<T>(string path) => File.Exists(path) ? JsonSerializer.Deserialize<T>(File.ReadAllText(path), JsonOptions) : default;
+
+    /// <summary>Last write time and length, or null when the file is absent or unreadable.</summary>
+    /// <remarks>
+    /// The desktop polls a few files on a timer. Comparing this against the previous value
+    /// tells it whether reading and parsing them again can change anything on screen.
+    /// </remarks>
+    public static (DateTime Written, long Length)? Stamp(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists ? (info.LastWriteTimeUtc, info.Length) : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
 }
 
 public sealed class ConnectionSettings
@@ -133,13 +149,24 @@ public static class DeploymentSecurity
         }
     }
 
-    public static void ValidateRuntime()
+    /// <summary>Verify that IPKeep is running from a correctly protected installation.</summary>
+    /// <param name="includeAllFiles">
+    /// Read the ACL of every published file under the service directory. The service
+    /// directory is owned by Administrators with inheritance protected and no write access
+    /// for anyone else, so once that directory passes, no unprivileged account can add or
+    /// alter a file inside it. The exhaustive sweep therefore guards against permissions
+    /// that were already wrong when the directory was created, which is a startup concern:
+    /// pass true on startup and after installing, false on the recurring check, where
+    /// reading 200 ACLs every cycle costs far more than it detects.
+    /// </param>
+    public static void ValidateRuntime(bool includeAllFiles = true)
     {
         if (!string.Equals(Environment.ProcessPath, AppPaths.ServiceExecutable, StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException("Install IPKeep before starting its background service.");
         foreach (string directory in new[] { AppPaths.InstallRoot, AppPaths.ServiceDirectory, AppPaths.DataRoot }) ValidateFile(directory);
         ValidateFile(AppPaths.PrivateDirectory, secret: true);
         ValidateFile(AppPaths.RuntimeDirectory, runtime: true);
+        if (!includeAllFiles) { ValidateFile(AppPaths.ServiceExecutable); return; }
         foreach (string file in Directory.EnumerateFiles(AppPaths.ServiceDirectory, "*", SearchOption.AllDirectories)) ValidateFile(file);
     }
 }

@@ -26,6 +26,14 @@ Test("Rejects custom domains, nested labels and invalid names", () =>
 {
     foreach (string name in new[] { "", "evil.com", "x.home.a.ipkeep.net", "-home", "home-", "h_ome", "home.a.ipkeep.net.evil.com", "*", new string('a', 64) }) Throws<SettingsException>(() => Settings(name).Validate());
 });
+Test("Accepts up to five unique hostnames and rejects empty or oversized settings", () =>
+{
+    var names = Enumerable.Range(1, 5).Select(index => $"host{index}.a.ipkeep.net").ToArray();
+    Assert(Settings(names).Validate().Hostnames.SequenceEqual(names));
+    Assert(Settings([.. names, " HOST1 "]).Validate().Hostnames.SequenceEqual(names));
+    Throws<SettingsException>(() => new ClientSettings().Validate());
+    Throws<SettingsException>(() => Settings([.. names, "sixth"]).Validate());
+});
 Test("Validates intervals and token input", () =>
 {
     Throws<SettingsException>(() => (Settings() with { IntervalMinutes = 0 }).Validate());
@@ -150,13 +158,13 @@ AsyncTest("Hostname list rejects errors and preserves credential redaction", asy
 AsyncTest("Hostname selection requires a loaded list and cannot accept typed or another account's names", async () =>
 {
     var session = new HostSelectionSession();
-    Throws<SettingsException>(() => session.Select(Settings(), "home.a.ipkeep.net"));
+    Throws<SettingsException>(() => session.Select(Settings(), ["home.a.ipkeep.net"]));
     await session.ConnectAsync(token, new FakeHostList(_ => Task.FromResult(new[] { "home.a.ipkeep.net" })), default);
-    Throws<SettingsException>(() => session.Select(Settings(), "other.a.ipkeep.net"));
-    Throws<SettingsException>(() => session.Select(Settings(), "home"));
-    var connection = session.Select(Settings(), "home.a.ipkeep.net");
+    Throws<SettingsException>(() => session.Select(Settings(), ["other.a.ipkeep.net"]));
+    Throws<SettingsException>(() => session.Select(Settings(), ["home"]));
+    var connection = session.Select(Settings(), ["home.a.ipkeep.net"]);
     Assert(connection.Token == token && connection.Settings.Hostnames.Single() == "home.a.ipkeep.net");
-    session.Reset(); Throws<SettingsException>(() => session.Select(Settings(), "home.a.ipkeep.net"));
+    session.Reset(); Throws<SettingsException>(() => session.Select(Settings(), ["home.a.ipkeep.net"]));
 });
 AsyncTest("Failed token changes and stale loads cannot retain an earlier selection", async () =>
 {
@@ -174,7 +182,7 @@ AsyncTest("Empty hostname accounts cannot enable updates", async () =>
     var session = new HostSelectionSession();
     await session.ConnectAsync(token, new FakeHostList(_ => Task.FromResult(Array.Empty<string>())), default);
     Assert(session.IsConnected && session.Hostnames.Count == 0);
-    Throws<SettingsException>(() => session.Select(Settings(), "home.a.ipkeep.net"));
+    Throws<SettingsException>(() => session.Select(Settings(), ["home.a.ipkeep.net"]));
 });
 AsyncTest("Discovery uses IPKeep JSON without authorization headers", async () =>
 {
@@ -361,6 +369,60 @@ AsyncTest("DNS pending stays visible; never claims published DNS", async () =>
     var result = await new CheckEngine(new FakeResolver(), client, new MemoryLog()).RunAsync(Settings(), token, default);
     Assert(result.Success && result.Message.Contains("pending")); Assert(!result.Hosts[0].DnsUpdated && result.Hosts[0].Message.Contains("pending"));
 });
+AsyncTest("Multi-selection restores active choices, automatically selects a sole hostname, and rejects invalid selections", async () =>
+{
+    var names = Enumerable.Range(1, 6).Select(index => $"host{index}.a.ipkeep.net").ToArray();
+    var session = new HostSelectionSession();
+    Assert(session.RestoreSelection(names).Length == 0);
+    await session.ConnectAsync(token, new FakeHostList(_ => Task.FromResult(names)), default);
+    Assert(session.RestoreSelection([]).Length == 0);
+    Assert(session.RestoreSelection([names[4], names[0], "removed.a.ipkeep.net", names[0]]).SequenceEqual(new[] { names[4], names[0] }));
+    Assert(session.RestoreSelection(names).Length == 6); // Do not silently truncate an old setup.
+    Assert(session.Select(Settings(), names.Take(5)).Settings.Hostnames.Length == 5);
+    Throws<SettingsException>(() => session.Select(Settings(), names));
+    Throws<SettingsException>(() => session.Select(Settings(), []));
+    Throws<SettingsException>(() => session.Select(Settings(), [names[0], "other.a.ipkeep.net"]));
+    await session.ConnectAsync(token, new FakeHostList(_ => Task.FromResult(new[] { names[2] })), default);
+    Assert(session.RestoreSelection([]).Single() == names[2]);
+    await session.ConnectAsync(token, new FakeHostList(_ => Task.FromResult(Array.Empty<string>())), default);
+    Assert(session.RestoreSelection(names).Length == 0);
+});
+AsyncTest("Saving rechecks every selected hostname and rejects stale token or hostname lists", async () =>
+{
+    var names = Enumerable.Range(1, 5).Select(index => $"host{index}.a.ipkeep.net").ToArray();
+    var session = new HostSelectionSession();
+    var client = new FakeHostList(value => { Assert(value == token); return Task.FromResult(names); });
+    await session.ConnectAsync(token, client, default);
+    var connection = await session.SelectAsync(Settings(), names, client, default);
+    Assert(connection.Settings.Hostnames.SequenceEqual(names) && connection.Token == token);
+    await ThrowsAsync<SettingsException>(() => session.SelectAsync(Settings(), names,
+        new FakeHostList(_ => Task.FromResult(names.Take(4).ToArray())), default));
+    Assert(!session.IsConnected);
+    await session.ConnectAsync(token, client, default);
+    var delayed = new TaskCompletionSource<string[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var pending = session.SelectAsync(Settings(), names, new FakeHostList(_ => delayed.Task), default);
+    session.Reset(); delayed.SetResult(names);
+    await ThrowsAsync<SettingsException>(() => pending);
+});
+AsyncTest("Five saved selections survive reopening and each receive the same discovered addresses", async () =>
+{
+    var names = Enumerable.Range(1, 5).Select(index => $"host{index}.a.ipkeep.net").ToArray();
+    var saved = Settings(names) with { EnableIPv6 = true };
+    var reopened = JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(saved))!.Validate();
+    var session = new HostSelectionSession();
+    await session.ConnectAsync(token, new FakeHostList(_ => Task.FromResult(names.Reverse().ToArray())), default);
+    var connection = session.Select(reopened, session.RestoreSelection(reopened.Hostnames));
+    var updates = new List<string>(); int lookups = 0;
+    var resolver = new FakeResolver { Handler = ipv6 => { lookups++; return Task.FromResult(ipv6 ? "2606:4700:4700::1111" : "8.8.8.8"); } };
+    var updater = new FakeUpdater((name, ipv4, ipv6) =>
+    {
+        Assert(ipv4 == "8.8.8.8" && ipv6 == "2606:4700:4700::1111"); updates.Add(name);
+        return Task.FromResult(new UpdateReply(true, true));
+    });
+    var result = await new CheckEngine(resolver, updater, new MemoryLog()).RunAsync(connection.Settings, connection.Token, default);
+    Assert(lookups == 2 && updater.Calls == 5 && updates.SequenceEqual(names));
+    Assert(result.Success && result.Hosts.Length == 5 && result.Hosts.All(host => host.Success));
+});
 AsyncTest("Partial host failures do not stop remaining host updates", async () =>
 {
     var client = new FakeUpdater((name, _, _) => name.StartsWith("bad.") ? throw new UpdateException("Host missing") : Task.FromResult(new UpdateReply(true, true)));
@@ -372,6 +434,16 @@ AsyncTest("Authentication rejection stops redundant requests", async () =>
     var client = new FakeUpdater((_, _, _) => throw new UpdateException("Invalid token", true));
     var result = await new CheckEngine(new FakeResolver(), client, new MemoryLog()).RunAsync(Settings("home", "office"), token, default);
     Assert(!result.Success && client.Calls == 1 && result.Hosts.Length == 2);
+    // The rejection is reported to the caller, so the service can stop rescheduling.
+    Assert(result.AuthenticationRejected);
+    Assert(CheckSchedule.Delay(result.Success, 360, 1, result.AuthenticationRejected) is null);
+});
+AsyncTest("An ordinary host failure is retried and is not treated as a rejected token", async () =>
+{
+    var client = new FakeUpdater((_, _, _) => throw new UpdateException("Host missing"));
+    var result = await new CheckEngine(new FakeResolver(), client, new MemoryLog()).RunAsync(Settings("home", "office"), token, default);
+    Assert(!result.Success && !result.AuthenticationRejected && client.Calls == 2);
+    Assert(CheckSchedule.Delay(result.Success, 360, 1, result.AuthenticationRejected) == TimeSpan.FromMinutes(5));
 });
 AsyncTest("Ignored addresses skip requests and use normal interval", async () =>
 {
@@ -517,10 +589,10 @@ AsyncTest("Reopened desktop uses its remembered token to refresh hostname choice
         }));
         var session = new HostSelectionSession(); var client = new IpKeepClient(http, new MemoryLog());
         Assert(await session.ConnectAsync(restored, client, default));
-        Assert(session.Select(Settings(), "home.a.ipkeep.net").Token == token && session.Hostnames.Count == 2);
+        Assert(session.Select(Settings(), ["home.a.ipkeep.net"]).Token == token && session.Hostnames.Count == 2);
         response = "{\"hosts\":[{\"hostname\":\"office.a.ipkeep.net\"}]}";
         Assert(await session.ConnectAsync(restored, client, default) && requests == 2);
-        Throws<SettingsException>(() => session.Select(Settings(), "home.a.ipkeep.net"));
+        Throws<SettingsException>(() => session.Select(Settings(), ["home.a.ipkeep.net"]));
         Assert(session.Hostnames.Single() == "office.a.ipkeep.net");
     }
     finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
@@ -530,7 +602,57 @@ Test("Saved-token migration refuses another Windows account and unexpected argum
     Assert(SavedTokenRestore.Run([SavedTokenRestore.Argument, "S-1-0-0"]) == 2);
     Assert(SavedTokenRestore.Run([SavedTokenRestore.Argument, WindowsIdentity.GetCurrent().User!.Value, "extra"]) == 2);
 });
-Test("Runtime guard refuses to run a service from the workspace", () => Throws<UnauthorizedAccessException>(DeploymentSecurity.ValidateRuntime));
+Test("Runtime guard refuses to run a service from the workspace", () =>
+{
+    Throws<UnauthorizedAccessException>(() => DeploymentSecurity.ValidateRuntime());
+    // The cheaper per-cycle form must refuse just as firmly as the full startup sweep.
+    Throws<UnauthorizedAccessException>(() => DeploymentSecurity.ValidateRuntime(includeAllFiles: false));
+});
+
+Test("Check schedule backs off on repeated failures and never exceeds the chosen interval", () =>
+{
+    Assert(CheckSchedule.Delay(true, 360) == TimeSpan.FromMinutes(360));
+    Assert(CheckSchedule.Delay(false, 360, 1) == TimeSpan.FromMinutes(5));
+    Assert(CheckSchedule.Delay(false, 360, 2) == TimeSpan.FromMinutes(10));
+    Assert(CheckSchedule.Delay(false, 360, 3) == TimeSpan.FromMinutes(20));
+    Assert(CheckSchedule.Delay(false, 360, 4) == TimeSpan.FromMinutes(40));
+    // Capped at an hour however long the outage lasts, including absurd failure counts.
+    Assert(CheckSchedule.Delay(false, 360, 5) == TimeSpan.FromMinutes(60));
+    Assert(CheckSchedule.Delay(false, 360, 99) == TimeSpan.FromMinutes(60));
+    // A short interval is never lengthened by the backoff.
+    Assert(CheckSchedule.Delay(false, 10, 9) == TimeSpan.FromMinutes(10));
+    Assert(CheckSchedule.Delay(false, 1, 9) == TimeSpan.FromMinutes(1));
+    // The default keeps the original first-retry behaviour for existing callers.
+    Assert(CheckSchedule.Delay(false, 360) == TimeSpan.FromMinutes(5));
+});
+
+Test("A rejected token stops scheduling instead of retrying every five minutes forever", () =>
+{
+    Assert(CheckSchedule.Delay(false, 360, 1, authenticationRejected: true) is null);
+    Assert(CheckSchedule.Delay(false, 360, 20, authenticationRejected: true) is null);
+    // Success always reschedules, even if an earlier attempt was rejected.
+    Assert(CheckSchedule.Delay(true, 360, 0, authenticationRejected: true) == TimeSpan.FromMinutes(360));
+});
+
+Test("Installer accepts only fixed operations without paths or credentials", () =>
+{
+    foreach (string operation in new[] { "--installer-check", "--installer-upgrade", "--installer-remove" })
+    {
+        Assert(InstallerOperations.IsCommand([operation]));
+        Assert(!InstallerOperations.IsCommand([operation, "C:\\arbitrary"]));
+        Assert(InstallerOperations.Run([operation, "extra"], "C:\\arbitrary") == 2);
+    }
+    Assert(!InstallerOperations.IsCommand([]));
+    Assert(InstallerOperations.Run(["--unknown"], "C:\\arbitrary") == 2);
+});
+Test("Installer cleanup only recognizes the service and GUID-named service backups", () =>
+{
+    string id = Guid.NewGuid().ToString("N");
+    foreach (string name in new[] { "service", "SERVICE", "service-stage-" + id, "service-previous-" + id, "service-stage-" + id + "-failed" })
+        Assert(InstallerOperations.IsServiceDirectoryName(name));
+    foreach (string name in new[] { "app", "Private", "Activity", "..", "service-old", "service-previous-documents", "service-stage-", "service/../app", "service-stage-" + id + "-other" })
+        Assert(!InstallerOperations.IsServiceDirectoryName(name));
+});
 
 if (args.Contains("--live-ipv4")) AsyncTest("Live anonymous IPv4 discovery from IPKeep over HTTPS", async () =>
 {

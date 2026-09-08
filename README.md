@@ -1,12 +1,12 @@
 # IPKeep for Windows
 
-A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose an existing hostname, and let the service check your public IP in the background.
+A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose up to five existing hostnames, and let the service check your public IP in the background.
 
 **Version 1.0.0** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
 [Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
 
-This repository contains the Windows client and service. Build from source using the instructions below. A signed installer, automatic application updates, and Microsoft Store distribution are not available yet. Background DNS updates are already supported.
+This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. A signed installer, automatic application updates, and Microsoft Store distribution are not available yet. Background DNS updates are already supported.
 
 ![IPKeep Overview with fictional example addresses](docs/images/overview.png)
 
@@ -14,7 +14,7 @@ This repository contains the Windows client and service. Build from source using
 
 ## Features
 
-- Token-based setup with a dropdown of your existing hostnames.
+- Token-based setup with automatic selection for one hostname, or a checkbox dropdown for up to five hostnames.
 - Automatic IP checks, five-minute retries after failures, and pause/resume controls.
 - Choice of IPKeep, Amazon Check IP, ipify, or ident.me, with live IPv4 comparisons for VPN users.
 - IPv4 and optional IPv6 updates, depending on the selected provider.
@@ -23,15 +23,17 @@ This repository contains the Windows client and service. Build from source using
 
 ## Getting started
 
-1. Build with `./build.ps1`, or extract the complete published `dist/IPKeep` folder to a permanent local folder. Keep the executable, dependencies, Assets, and service folder together.
+1. Download `IPKeep-1.0.0-preview.2-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
 2. Open `IPKeep.exe`. Viewing status/activity and verifying your own token do not require administrator access.
 3. Open **Settings**. For initial service setup, choose **Allow changes** and approve the Windows administrator prompt; the elevated app returns to Settings.
 4. Create your hostname and an API token at [admin.ipkeep.net](https://admin.ipkeep.net/). Hostnames can only be created and managed in that admin panel.
-5. Paste the token into **1. IPKeep API token** and choose **Load my hostnames**. A verified token is remembered encrypted for this Windows user. Select an existing hostname from **2. Hostname for this computer**. Only this account's enabled hostnames are offered; an empty list directs you to the admin panel.
+5. Paste the token into **1. IPKeep API token** and choose **Load my hostnames**. A verified token is remembered encrypted for this Windows user. If the account has one active hostname, it is selected automatically and shown without a dropdown. If it has more than one, open **2. Hostnames for this computer** and check up to five. The dropdown shows the selected count, and unchecked choices are disabled at the limit until you uncheck another hostname. Only this account's enabled hostnames are offered; an empty list directs you to the admin panel.
 6. Optionally open **IP lookup service** to compare the IPv4 returned by each provider. IPKeep is selected by default. Choose the service that reports the address you want to publish, especially when a VPN routes some destinations differently.
-7. Choose **Save and enable updates**. This verifies the hostname, installs the background service if needed, saves the encrypted token, selected hostname, and lookup provider, and starts the first check. The window can then be closed.
+7. Choose **Save and enable updates**. This verifies every selected hostname, installs the background service if needed, saves the encrypted token, all selected hostnames, and lookup provider, and starts the first check. All selected hostnames receive this computer's detected addresses. The window can then be closed.
 
-This release supports Windows 10 version 2004 or later and Windows 11, x64. The build bundles .NET and the Windows App SDK, so target computers do not need to install those runtimes separately. It is an unsigned folder distribution, not an MSIX or signed installer. The manager remains in the folder from which you run it; only the service is copied to Program Files.
+This release supports Windows 10 version 2004 or later and Windows 11, x64. The build bundles .NET and the Windows App SDK, so target computers do not need to install those runtimes separately. The installer places the manager in `%ProgramFiles%/IPKeep/app`; the active service uses `%ProgramFiles%/IPKeep/service`. The ZIP remains an optional folder distribution. No Microsoft Store or MSIX registration is involved.
+
+To update an installed beta, close IPKeep and run the newer installer. Setup also detects applications holding its files open. An existing service is updated from the new bundle; running services resume and paused/disabled services retain their state. Saved settings, encrypted tokens, and activity logs are preserved. New installs wait for token setup before installing the service. A newer installed installer version cannot be replaced by an older one. If a service update fails, setup reports it, returns exit code 20, and leaves the desktop available for repair; the service deployment attempts to restore its previous files. Application auto-update is not implemented.
 
 When the API returns `dnsUpdated: false`, the app reports **IP recorded. DNS publishing pending.** It only reports published DNS when the API confirms it.
 
@@ -39,10 +41,10 @@ When the API returns `dnsUpdated: false`, the app reports **IP recorded. DNS pub
 
 - **Overview:** service state, public addresses detected when the window opens, last/next host update check, and a result for each configured hostname. Anonymous lookup of the provider's supported address families works immediately, even without a token, administrator access, or an installed service; Amazon shows IPv6 as not supported. **Refresh addresses** checks the current connection again. Each address shows its detection time or a specific lookup error. The provider is named, and an unsaved choice is labeled as a preview. Refreshing this preview does not send host updates or change the IPv6 update setting. **Check now** queues a service check without overlapping an active one.
 - **Pause updates:** stops the service and changes startup to manual, so updates stay paused after reboot. **Enable updates** restores automatic startup and starts a check.
-- **Settings:** restores the remembered token into the masked password field on normal launches. Each opening refreshes the account's active hostname list and preserves the selected hostname if still available. Token editing, verification, and hostname selection work without elevation. Replace the token and choose **Load my hostnames** to verify and remember another account; changing tokens clears the previous list until verified. Verified tokens are remembered even if no hostnames exist yet. Applying service settings still requires **Allow changes**. This setup selects one hostname per computer; it cannot create or type in new hostnames. Existing multi-host configurations continue running until saved with a new selection, and Settings warns that saving replaces them.
+- **Settings:** restores the remembered token into the masked password field on normal launches. Each opening refreshes the account's active hostname list and preserves all still-active selections. One active hostname is selected automatically; the multi-select dropdown appears only when the account has more than one. Token editing, verification, and hostname selection work without elevation. Replace the token and choose **Load my hostnames** to verify and remember another account; changing tokens clears the previous choices until verified. Verified tokens are remembered even if no hostnames exist yet. Applying service settings still requires **Allow changes**. Select one to five hostnames per computer; the app cannot create or type in new hostnames. An older configuration with more than five is shown without silently truncating its choices; reduce it to five and save before using the updated service.
 - **Restoring an older saved token:** when there is no token remembered for this Windows user, opening Settings requests one Windows administrator approval to recover the existing service token. Approve using the same Windows account; a different administrator account cannot export the token to your profile. Once restored, the app fills the masked field and looks up hostnames automatically, and later launches need no elevation for these lookups. If cancelled, choose **Load my hostnames** to retry or paste the token. The migration helper changes only the user's remembered token and does not change or restart the service. This Windows approval is required by the older credential file's administrator-only permissions.
 - **Action messages:** retrying starts with a clear notification area. Successfully loading hostnames clears an earlier restore error; a new validation or storage error still appears if the current attempt fails.
-- **Setup visibility:** IP lookup service, Advanced options, and Save and enable updates stay hidden until the token successfully loads at least one active hostname. Changing the token or reloading the list hides them while verification runs; failed/empty lists and rejected tokens keep them hidden. A saved hostname alone does not count as verification. With multiple returned hostnames, choose one to enable Save.
+- **Setup visibility:** the hostname field, IP lookup service, Advanced options, and Save and enable updates stay hidden until the token successfully loads at least one active hostname. Changing the token or reloading the list hides them while verification runs; failed/empty lists and rejected tokens keep them hidden. Saved hostnames alone do not count as verification. Save requires one to five selected hostnames and administrator access.
 - **IP lookup service:** opening the dropdown checks all providers concurrently over IPv4. Each row changes from Checking to its returned address or Unavailable; hover a failed row for details. Each request has a ten-second timeout, reopening refreshes all results, and old responses cannot overwrite a newer comparison. Lookup requests remain anonymous even though the Settings controls require a verified hostname list. Selecting a provider immediately previews its addresses in Overview; save settings to use it for background updates. Amazon supports IPv4 only, so selecting it turns off IPv6 updates. IPKeep, ipify, and ident.me support both families.
 - **Advanced options:** 1–1,440 minutes between checks (default 360), optional IPv6, and ignored IP addresses/CIDR ranges (one per line). IPv4 is always checked. Enable IPv6 only on a connection that supports it. Ignored or unavailable addresses are omitted, preserving the corresponding saved server address.
 - **Activity:** the latest 200 entries in a compact **Time (local), Level, Message** table, newest first, refreshed every two seconds. Timestamps are converted to the computer's local timezone using the offset applicable to each event, including daylight-saving changes. The short format is `07 Sep, 14:32:06`; hover a timestamp for its full date/year and offset. Timestamps inside messages, such as the next check time, are also displayed locally. Long messages wrap within their column. Filtering matches both the displayed local text and the original log line. Malformed/incomplete lines remain visible with an unavailable timestamp. **Open log folder** opens the original files, whose full timestamps and offsets are preserved.
@@ -77,6 +79,7 @@ Every start checks immediately. Successful and ignored checks use the configured
 
 | Item | Location |
 | --- | --- |
+| Desktop installed by setup (including service deployment bundle) | `%ProgramFiles%/IPKeep/app/` |
 | Service executable and dependencies | `%ProgramFiles%/IPKeep/service/` |
 | Public settings (no token) | `%ProgramData%/IPKeep/settings.json` |
 | Encrypted connection/settings | `%ProgramData%/IPKeep/Private/connection.bin` |
@@ -105,6 +108,10 @@ git clone https://github.com/calxibe/ipkeep-windows.git
 cd ipkeep-windows
 ./build.ps1                  # tests, then self-contained x64 desktop + service
 ./build.ps1 -NoTest          # publish without tests
+./build.ps1 -OutputDirectory dist/IPKeep-multihost  # build separately while another copy is open
+# Package a fresh publish and build the unsigned beta installer (Inno Setup 6.7+):
+./scripts/package.ps1 -Commit (git rev-parse HEAD)
+./scripts/build-installer.ps1 -BetaNumber 2
 # Tests only:
 dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release
 # Optional: also verify the anonymous IPv4 discovery endpoint live (no token):
@@ -117,15 +124,21 @@ Building never installs, starts, or stops a service and does not send production
 
 ## Validation and remaining release checks
 
-The initial release has 48 isolated tests. These cover HTTP/token boundaries, hostname selection, provider behavior, storage and encryption, scheduling, log handling, and Activity timestamp formatting. Native layouts and live anonymous IPv4 discovery have also been inspected during development. Automated tests do not represent full service-installation or GUI acceptance testing.
+The current source has 57 isolated tests. These cover HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, and installer command/cleanup boundaries. Native layouts and live anonymous IPv4 discovery have also been inspected during development.
 
-Before broad installer distribution, remaining checks include administrator installation, reboot, upgrade/rollback, removal, service-maintenance visibility for existing installations, and live token restoration across launches. Code signing and a full desktop installer remain planned work.
+The GitHub Windows build compiles the installer using [Inno Setup](https://jrsoftware.org/isinfo.php) and runs `tests/IPKeep.InstallerTests` on a disposable administrator runner. That suite exercises fresh setup, shortcuts, Installed Apps registration, running/paused/disabled service upgrades, a blocked service update and repair, downgrade/path refusal, uninstall, reinstall, and retention of settings/connection/activity files. Its deliberately invalid encrypted connection cannot authorize DNS updates. The suite refuses to run on a normal workstation or one with existing IPKeep files/data. Installer logs are retained as a separate build artifact.
+
+Before broad distribution, remaining checks include interactive Windows 10/11 testing, reboot, live token restoration across launches, service-maintenance visibility for existing installations, and native visual/keyboard verification of the new multi-select dropdown. Code signing remains pending. Building an installer does not install it on the developer's computer.
 
 ## Removing IPKeep
 
+For an installer-based installation, close IPKeep and choose **IPKeep → Uninstall** in Windows **Settings → Apps → Installed apps**. This stops and unregisters the service and removes the installed desktop, service files, and shortcuts. Settings, encrypted tokens, and logs are retained for reinstallation; no account or hostname is deleted. If service removal fails, uninstallation stops and reports the error rather than removing its management files.
+
+For an older ZIP/folder installation:
+
 1. Open Settings, choose **Allow changes**, and approve the Windows administrator prompt.
 2. Expand **Service maintenance** and choose **Remove service**. This stops and unregisters the background service; it retains its files and data.
-3. Close every IPKeep desktop window. You can now delete the extracted application folder and the installed `%ProgramFiles%/IPKeep` service files (administrator access is required for Program Files).
+3. Close every IPKeep desktop window. You can now delete the extracted application folder and the installed `%ProgramFiles%/IPKeep/service` files (administrator access is required for Program Files). If you also installed the desktop through setup, use its Windows uninstaller instead of deleting its folder.
 4. If you also want to erase local settings, tokens, and logs, delete `%ProgramData%/IPKeep` with administrator access and `%LOCALAPPDATA%/IPKeep` for each Windows user who ran the app. These deletions cannot be undone by IPKeep.
 
 Removing the client does not delete your IPKeep account or hostnames. Revoke its token in the admin panel if it should no longer authorize updates from any device.

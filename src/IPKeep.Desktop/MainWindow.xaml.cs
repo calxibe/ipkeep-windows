@@ -27,6 +27,8 @@ public sealed partial class MainWindow : Window
     private bool windowClosed;
     private readonly HostSelectionSession hostSelection = new();
     private ClientSettings? savedSettings;
+    private string[] preferredHostnames = [];
+    private bool settingHostnameSelection;
     private bool settingTokenField;
     private bool attemptedTokenRestore;
     private readonly bool openSettingsOnLaunch;
@@ -155,8 +157,7 @@ public sealed partial class MainWindow : Window
             {
                 if (!hostSelection.IsConnected)
                 {
-                    HostnameBox.ItemsSource = settings.Hostnames;
-                    HostnameBox.SelectedItem = settings.Hostnames.FirstOrDefault();
+                    preferredHostnames = settings.Hostnames ?? [];
                 }
                 IntervalBox.Value = settings.IntervalMinutes; IPv6Switch.IsOn = settings.EnableIPv6;
                 var provider = IpLookupProviders.Get(settings.IpLookupProviderId);
@@ -167,7 +168,6 @@ public sealed partial class MainWindow : Window
                     TokenBox.PlaceholderText = "Saved token — restore to load your hostnames";
                     TokenHint.Text = "Your token is saved. Windows may ask once to restore it for this Windows user.";
                 }
-                if (settings.Hostnames.Length > 1) HostListHint.Text = "This setup selects one hostname. Saving will replace your previous hostname selections.";
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or SettingsException)
@@ -220,7 +220,7 @@ public sealed partial class MainWindow : Window
             ? "Your token is remembered securely for this Windows user. Replace it to connect another account."
             : "Your token is loaded, but could not be remembered. You may need to enter it again next time.";
         ConnectionTitle.Text = "Your IPKeep connection.";
-        ConnectionSubtitle.Text = remembered ? "Your saved token is restored. Choose a hostname from your account." : "Choose a hostname from your account.";
+        ConnectionSubtitle.Text = remembered ? "Your saved token is restored. Connect this computer to your hostnames." : "Connect this computer to your hostnames.";
     }
 
     private bool RememberToken(string token)
@@ -232,27 +232,79 @@ public sealed partial class MainWindow : Window
 
     private void Token_Changed(object sender, RoutedEventArgs e)
     {
-        if (settingTokenField || HostnameBox is null) return;
-        hostSelection.Reset(); HostnameBox.ItemsSource = null;
-        HostnameBox.PlaceholderText = "Load your hostnames first";
-        HostListHint.Text = "Load the hostnames for this token before selecting one.";
+        if (settingTokenField || HostnameList is null) return;
+        preferredHostnames = [];
+        hostSelection.Reset(); ClearHostnameChoices();
+        HostListHint.Text = "Load the hostnames for this token before selecting them.";
         TokenHint.Text = "Load your hostnames to verify and securely remember this token for your Windows user.";
         ConnectionTitle.Text = "Connect this computer.";
-        ConnectionSubtitle.Text = "Add your token, then choose a hostname from your account.";
+        ConnectionSubtitle.Text = "Add your token to connect this computer to your hostnames.";
         SetEditingState(!busy && DeploymentSecurity.IsAdministrator);
     }
 
-    private void Hostname_Changed(object sender, SelectionChangedEventArgs e)
+    private string[] SelectedHostnames => HostnameList.SelectedItems.OfType<string>().ToArray();
+    private bool HasValidHostnameSelection => hostSelection.IsConnected
+        && HostnameList.SelectedItems.Count is >= 1 and <= ClientSettings.MaximumHostnames;
+
+    private void ClearHostnameChoices()
     {
-        if (SaveButton is not null) SaveButton.IsEnabled = !busy && DeploymentSecurity.IsAdministrator && hostSelection.IsConnected && HostnameBox.SelectedItem is string;
+        settingHostnameSelection = true;
+        try { HostnameList.ItemsSource = null; }
+        finally { settingHostnameSelection = false; }
+        HostnameFlyout.Hide();
+        UpdateHostnameSelection();
+    }
+
+    private void Hostnames_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (settingHostnameSelection) return;
+        settingHostnameSelection = true;
+        try
+        {
+            // Also enforce the limit for keyboard selection, not only disabled rows.
+            foreach (var added in e.AddedItems.Reverse())
+            {
+                if (HostnameList.SelectedItems.Count <= ClientSettings.MaximumHostnames) break;
+                HostnameList.SelectedItems.Remove(added);
+            }
+        }
+        finally { settingHostnameSelection = false; }
+        preferredHostnames = SelectedHostnames;
+        UpdateHostnameSelection();
+    }
+
+    private void Hostnames_Opening(object sender, object e)
+    {
+        HostnameFlyoutContent.Width = Math.Max(220, Math.Min(620, HostnameDropdown.ActualWidth - 24));
+        UpdateHostnameSelection();
+    }
+
+    private void Hostnames_ContainerChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        args.ItemContainer.IsEnabled = args.InRecycleQueue || (!busy &&
+            (HostnameList.SelectedItems.Count < ClientSettings.MaximumHostnames || HostnameList.SelectedItems.Contains(args.Item)));
+    }
+
+    private void UpdateHostnameSelection()
+    {
+        var selected = SelectedHostnames;
+        HostnameSummary.Text = selected.Length switch { 0 => "Choose hostnames", 1 => selected[0], _ => $"{selected.Length} hostnames selected" };
+        ToolTipService.SetToolTip(HostnameDropdown, selected.Length == 0 ? "Choose up to 5 hostnames" : string.Join(Environment.NewLine, selected));
+        HostnameSelectionCount.Text = selected.Length > ClientSettings.MaximumHostnames
+            ? $"{selected.Length} selected. Reduce your selection to 5 before saving."
+            : $"{selected.Length} of 5 selected" + (selected.Length == ClientSettings.MaximumHostnames ? ". Uncheck one to choose another." : "");
+        foreach (var item in HostnameList.Items)
+            if (HostnameList.ContainerFromItem(item) is ListViewItem container)
+                container.IsEnabled = !busy && (selected.Length < ClientSettings.MaximumHostnames || HostnameList.SelectedItems.Contains(item));
+        SaveButton.IsEnabled = !busy && DeploymentSecurity.IsAdministrator && HasValidHostnameSelection;
     }
 
     private async void LoadHosts_Click(object sender, RoutedEventArgs e) => await LoadHostChoicesAsync();
 
     private async Task LoadHostChoicesAsync() => await RunAction(async () =>
     {
-        string? previous = HostnameBox.SelectedItem as string ?? savedSettings?.Hostnames.FirstOrDefault();
-        hostSelection.Reset(); HostnameBox.ItemsSource = null;
+        var previous = preferredHostnames;
+        hostSelection.Reset(); ClearHostnameChoices();
         SetEditingState(false);
         string token = TokenBox.Password.Trim();
         if (token.Length == 0)
@@ -281,32 +333,72 @@ public sealed partial class MainWindow : Window
         {
             if (!await hostSelection.ConnectAsync(token, new IpKeepClient(http, new PreviewLog()), windowLifetime.Token) || windowClosed) return;
             ShowSavedToken(token, RememberToken(token));
-            HostnameBox.ItemsSource = hostSelection.Hostnames;
-            HostnameBox.PlaceholderText = "Choose a hostname";
-            if (previous is not null && hostSelection.Hostnames.Contains(previous)) HostnameBox.SelectedItem = previous;
-            else if (hostSelection.Hostnames.Count == 1) HostnameBox.SelectedIndex = 0;
+            settingHostnameSelection = true;
+            try
+            {
+                HostnameList.ItemsSource = hostSelection.Hostnames;
+                foreach (var name in hostSelection.RestoreSelection(previous)) HostnameList.SelectedItems.Add(name);
+            }
+            finally { settingHostnameSelection = false; }
+            preferredHostnames = SelectedHostnames;
             HostListHint.Text = hostSelection.Hostnames.Count == 0
                 ? "No active hostnames found. Create or enable a hostname in the admin panel, then load this list again."
-                : "Choose an existing hostname for this computer. Create or manage hostnames in the admin panel.";
-            if (savedSettings?.Hostnames.Length > 1) HostListHint.Text += " Saving replaces your previous hostname selections.";
+                : hostSelection.Hostnames.Count == 1 ? "Your hostname is selected automatically. Create or manage hostnames in the admin panel."
+                : "Choose up to 5 hostnames to update with this computer's IP address. Create or manage hostnames in the admin panel.";
+            if (preferredHostnames.Length > ClientSettings.MaximumHostnames)
+                HostListHint.Text = "Your older setup has more than 5 hostnames. Open the list and reduce your selection before saving.";
+            else if (previous.Except(hostSelection.Hostnames, StringComparer.Ordinal).Any())
+                HostListHint.Text += " Some previous choices are no longer active. Review the selection before saving.";
         }
         catch
         {
             hostSelection.Reset();
-            if (!windowClosed) { HostnameBox.ItemsSource = null; HostListHint.Text = "The hostname list could not be loaded. Check your token and try again."; }
+            if (!windowClosed) { ClearHostnameChoices(); HostListHint.Text = "The hostname list could not be loaded. Check your token and try again."; }
             throw;
         }
     });
 
-    private void Refresh()
+    // Reused across ticks; a new brush per refresh churns the UI thread for no visible gain.
+    private static readonly SolidColorBrush GreyDot = new(ColorHelper.FromArgb(255, 100, 116, 139));
+    private static readonly SolidColorBrush AmberDot = new(ColorHelper.FromArgb(255, 180, 110, 10));
+    private static readonly SolidColorBrush GreenDot = new(ColorHelper.FromArgb(255, 24, 128, 85));
+
+    // Value equality lets the list keep its containers when nothing about the hosts changed.
+    private sealed record HostStatusRow(string Hostname, string Message);
+
+    private ServiceSnapshot cachedSnapshot = new();
+    private ClientSettings? cachedSettings;
+    private (DateTime, long)? statusStamp, settingsStamp, logStamp;
+    private bool logRead;
+    private HostStatusRow[] hostRows = [];
+    private ServiceControllerStatus? renderedStatus;
+    private bool rendered;
+
+    private void Refresh(bool force = false)
     {
         if (busy) return;
         try
         {
             serviceStatus = ServiceManager.GetStatus();
             UpdateMaintenanceVisibility();
-            var snapshot = FileStore.ReadJson<ServiceSnapshot>(AppPaths.StatusFile) ?? new();
-            var settings = FileStore.ReadJson<ClientSettings>(AppPaths.SettingsFile);
+
+            // The status file changes about as often as a check runs, and the settings file
+            // only when the user saves. Re-reading and re-parsing both every two seconds, plus
+            // re-rendering from them, is work the screen cannot show. Compare the file stamps
+            // first and skip everything when the inputs and the service state are unchanged.
+            var currentStatusStamp = FileStore.Stamp(AppPaths.StatusFile);
+            var currentSettingsStamp = FileStore.Stamp(AppPaths.SettingsFile);
+            bool inputsChanged = force || !rendered || currentStatusStamp != statusStamp
+                || currentSettingsStamp != settingsStamp || serviceStatus != renderedStatus;
+            RefreshLog(force);
+            if (!inputsChanged) return;
+            if (force || currentStatusStamp != statusStamp) cachedSnapshot = FileStore.ReadJson<ServiceSnapshot>(AppPaths.StatusFile) ?? new();
+            if (force || currentSettingsStamp != settingsStamp) cachedSettings = FileStore.ReadJson<ClientSettings>(AppPaths.SettingsFile);
+            statusStamp = currentStatusStamp; settingsStamp = currentSettingsStamp;
+            renderedStatus = serviceStatus; rendered = true;
+
+            var snapshot = cachedSnapshot;
+            var settings = cachedSettings;
             bool running = serviceStatus == ServiceControllerStatus.Running;
             bool configured = settings?.Hostnames.Length > 0;
             StatusLabel.Text = serviceStatus is null ? "Not installed" : running ? (snapshot.State == "Checking" ? "Checking now" : "Background service running") : "Updates paused";
@@ -314,8 +406,8 @@ public sealed partial class MainWindow : Window
             bool attention = snapshot.State == "Needs attention";
             bool fullySkipped = snapshot.LastCheck is { Skipped: true, Hosts.Length: 0 };
             StatusTitle.Text = !configured ? "Keep your connections current." : !running ? "Ready when you are." : attention ? "Your connection needs attention." : fullySkipped ? "Update skipped on this network." : pendingDns ? "IP recorded. DNS publishing pending." : snapshot.LastCheck?.Success == true ? "Your connection is up to date." : "Getting your connection ready.";
-            StatusMessage.Text = !configured ? "Add your IPKeep API token in Settings, then choose a hostname from your account." : !running ? "Enable updates to keep these hostnames current in the background." : snapshot.Message;
-            StatusDot.Fill = new SolidColorBrush(!running || fullySkipped ? ColorHelper.FromArgb(255, 100, 116, 139) : attention || pendingDns ? ColorHelper.FromArgb(255, 180, 110, 10) : ColorHelper.FromArgb(255, 24, 128, 85));
+            StatusMessage.Text = !configured ? "Add your IPKeep API token in Settings to connect your hostnames." : !running ? "Enable updates to keep these hostnames current in the background." : snapshot.Message;
+            StatusDot.Fill = !running || fullySkipped ? GreyDot : attention || pendingDns ? AmberDot : GreenDot;
             PrimaryAction.Content = !configured ? "Set up IPKeep" : running ? "Check now" : "Enable updates";
             PrimaryAction.IsEnabled = !busy && (!running || DeploymentSecurity.IsAdministrator) && snapshot.State != "Checking";
             // A stale saved Checking state must not disable setup after a crash/stop.
@@ -324,18 +416,28 @@ public sealed partial class MainWindow : Window
             PauseButton.IsEnabled = DeploymentSecurity.IsAdministrator && !busy;
             LastCheckText.Text = FormatTime(snapshot.LastCheck?.CheckedAt);
             NextCheckText.Text = running ? snapshot.State == "Checking" ? "In progress" : FormatTime(snapshot.NextCheck) : "—";
-            HostsList.ItemsSource = settings?.Hostnames.Select(name => new
-            {
-                Hostname = name,
-                Message = snapshot.LastCheck?.Hosts.FirstOrDefault(h => h.Hostname == name)?.Message ?? "Waiting for its first update."
-            }).ToArray();
+            var rows = settings?.Hostnames.Select(name => new HostStatusRow(
+                name,
+                snapshot.LastCheck?.Hosts.FirstOrDefault(h => h.Hostname == name)?.Message ?? "Waiting for its first update."
+            )).ToArray() ?? [];
+            // Records compare by value, so an unchanged list leaves the ItemsControl alone
+            // instead of rebuilding every container.
+            if (!rows.SequenceEqual(hostRows)) { hostRows = rows; HostsList.ItemsSource = rows; }
             NoHostsText.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
-            var lines = ActivityLog.ReadTail(AppPaths.LogFile);
-            var signature = string.Join('\n', lines);
-            if (signature != lastLog) { lastLog = signature; logLines = lines; ApplyLogFilter(); }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or Win32Exception)
         { StatusLabel.Text = "Status unavailable"; StatusMessage.Text = "The service status could not be read. Open Settings or check the log folder."; }
+    }
+
+    // Reading the log tail seeks and splits up to 100 KB. Only do it when the file moved.
+    private void RefreshLog(bool force)
+    {
+        var stamp = FileStore.Stamp(AppPaths.LogFile);
+        if (!force && logRead && stamp == logStamp) return;
+        logStamp = stamp; logRead = true;
+        var lines = ActivityLog.ReadTail(AppPaths.LogFile);
+        var signature = string.Join('\n', lines);
+        if (signature != lastLog) { lastLog = signature; logLines = lines; ApplyLogFilter(); }
     }
 
     private static string FormatTime(DateTimeOffset? value) => value?.ToLocalTime().ToString("dd MMM, HH:mm:ss") ?? "—";
@@ -372,7 +474,7 @@ public sealed partial class MainWindow : Window
             if (TokenBox.Password.Length == 0 && attemptedTokenRestore)
                 TokenHint.Text = "Your token is saved. Choose Load my hostnames to restore it, or paste your token here.";
             if (ex is UpdateException { AuthenticationFailure: true })
-            { hostSelection.Reset(); HostnameBox.ItemsSource = null; }
+            { hostSelection.Reset(); ClearHostnameChoices(); }
             string message = ex is SettingsException or UpdateException ? ex.Message : ex is Win32Exception { NativeErrorCode: 1223 }
                 ? "Restoring the saved token was cancelled. Choose Load my hostnames to try again, or paste your token."
                 : ex is UnauthorizedAccessException ? "Choose Allow changes to manage IPKeep, or check the installation permissions." : "The action could not be completed. Check the installation files and Windows service status, then try again.";
@@ -385,7 +487,7 @@ public sealed partial class MainWindow : Window
             {
                 BusyRing.IsActive = false; SetEditingState(DeploymentSecurity.IsAdministrator);
                 RepairButton.IsEnabled = RemoveButton.IsEnabled = DeploymentSecurity.IsAdministrator;
-                Refresh();
+                Refresh(force: true);
             }
         }
     }
@@ -395,11 +497,8 @@ public sealed partial class MainWindow : Window
         await RunAction(async () =>
         {
             if (double.IsNaN(IntervalBox.Value) || IntervalBox.Value != Math.Truncate(IntervalBox.Value)) throw new SettingsException("Enter a whole number of minutes.");
-            var connection = hostSelection.Select(new ClientSettings { IntervalMinutes = (int)IntervalBox.Value, EnableIPv6 = IPv6Switch.IsOn, IpLookupProviderId = SelectedLookupProvider.Id, IgnoredNetworks = Lines(IgnoreBox.Text) }, HostnameBox.SelectedItem as string);
             using var http = NetworkClients.Create(1024 * 1024);
-            var available = await new IpKeepClient(http, new PreviewLog()).ListHostsAsync(connection.Token, windowLifetime.Token);
-            if (!available.Contains(connection.Settings.Hostnames[0]))
-            { hostSelection.Reset(); HostnameBox.ItemsSource = null; throw new SettingsException("That hostname is no longer active. Load your hostnames again and choose one."); }
+            var connection = await hostSelection.SelectAsync(new ClientSettings { IntervalMinutes = (int)IntervalBox.Value, EnableIPv6 = IPv6Switch.IsOn, IpLookupProviderId = SelectedLookupProvider.Id, IgnoredNetworks = Lines(IgnoreBox.Text) }, SelectedHostnames, new IpKeepClient(http, new PreviewLog()), windowLifetime.Token);
             await Task.Run(() =>
             {
                 ServiceManager.SaveAndEnable(AppContext.BaseDirectory, connection.Settings, connection.Token);
@@ -407,7 +506,9 @@ public sealed partial class MainWindow : Window
             });
             if (windowClosed) return;
             ShowSavedToken(connection.Token, RememberToken(connection.Token));
-            LoadSettings(); ShowPage("overview"); ShowFeedback("Token and hostname saved securely. Your first check is starting.");
+            LoadSettings(); ShowPage("overview");
+            string savedHosts = connection.Settings.Hostnames.Length == 1 ? "hostname" : $"{connection.Settings.Hostnames.Length} hostnames";
+            ShowFeedback($"Your token and {savedHosts} are saved securely. Your first check is starting.");
         });
     }
 
@@ -441,12 +542,19 @@ public sealed partial class MainWindow : Window
         TokenBox.IsEnabled = LoadHostsButton.IsEnabled = !busy;
         IntervalBox.IsEnabled = IPv6Switch.IsEnabled = enabled;
         bool hasVerifiedHosts = hostSelection.IsConnected && hostSelection.Hostnames.Count > 0;
+        HostnameSection.Visibility = hasVerifiedHosts ? Visibility.Visible : Visibility.Collapsed;
+        SingleHostnamePanel.Visibility = hasVerifiedHosts && hostSelection.Hostnames.Count == 1 ? Visibility.Visible : Visibility.Collapsed;
+        SingleHostnameText.Text = hostSelection.Hostnames.Count == 1 ? hostSelection.Hostnames[0] : "";
+        HostnameLabel.Text = hostSelection.Hostnames.Count == 1 ? "2. Hostname for this computer" : "2. Hostnames for this computer";
+        HostnameDropdown.Visibility = hasVerifiedHosts && hostSelection.Hostnames.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        HostnameDropdown.IsEnabled = HostnameList.IsEnabled = !busy && hasVerifiedHosts;
+        if (busy || !hasVerifiedHosts) HostnameFlyout.Hide();
         HostOptionsPanel.Visibility = hasVerifiedHosts ? Visibility.Visible : Visibility.Collapsed;
         if (!hasVerifiedHosts) { IpLookupBox.IsDropDownOpen = false; lookupProbes.Cancel(); }
         IpLookupBox.IsEnabled = !busy && hasVerifiedHosts;
         IPv6Switch.IsEnabled = enabled && SelectedLookupProvider.SupportsIPv6;
-        HostnameBox.IsEnabled = !busy && hostSelection.IsConnected && hostSelection.Hostnames.Count > 0;
-        SaveButton.IsEnabled = enabled && hostSelection.IsConnected && HostnameBox.SelectedItem is string;
+        UpdateHostnameSelection();
+        SaveButton.IsEnabled = enabled && HasValidHostnameSelection;
     }
     private void Filter_Changed(object sender, TextChangedEventArgs e) { if (LogList is not null) ApplyLogFilter(); }
     private void ApplyLogFilter()

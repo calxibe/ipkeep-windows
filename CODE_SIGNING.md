@@ -20,7 +20,7 @@ Signing accounts must use multi-factor authentication. Every signing request mus
 
 The [GitHub workflow](https://github.com/calxibe/ipkeep-windows/blob/main/.github/workflows/build.yml) tests and builds the public source on GitHub-hosted Windows runners, then retains the unsigned binaries as a workflow artifact. Preview release archives include the source commit and SHA-256 checksum. No SignPath submission step is enabled before onboarding.
 
-Only project-owned executables and assemblies are intended for signing: `IPKeep.exe`, `IPKeep.dll`, `IPKeep.Core.dll`, `service/IPKeep.Service.exe`, `service/IPKeep.Service.dll`, and `service/IPKeep.Core.dll`. Bundled Microsoft runtime and other third-party files retain their upstream signatures and licenses; they must not be re-signed as IPKeep. An installer is not yet included.
+Only project-owned executables and assemblies are intended for signing: `IPKeep.exe`, `IPKeep.dll`, `IPKeep.Core.dll`, `service/IPKeep.Service.exe`, `service/IPKeep.Service.dll`, and `service/IPKeep.Core.dll`, plus the setup executable and its generated uninstaller once signing is configured. Bundled Microsoft runtime and other third-party files retain their upstream signatures and licenses; they must not be re-signed as IPKeep. The current Inno Setup beta installer and its uninstaller are explicitly unsigned.
 
 The self-contained Windows build includes Windows App SDK redistributables under Microsoft terms, as well as .NET components. Their available license files and notices are included in the preview. SignPath Foundation must confirm that these platform dependencies are acceptable under its system-library exception; the project's MIT license does not relicense them.
 

@@ -79,7 +79,7 @@ public static class ServiceManager
             }
             RunSc("description", AppPaths.ServiceName, "Keeps your IPKeep hostnames connected using your IPKeep API token.");
             RunSc("failure", AppPaths.ServiceName, "reset=", "86400", "actions=", "restart/60000/restart/300000/restart/300000");
-            if (oldStatus == ServiceControllerStatus.Running) Start();
+            if (oldStatus == ServiceControllerStatus.Running) Resume();
         }
         catch
         {
@@ -89,7 +89,7 @@ public static class ServiceManager
                 if (Directory.Exists(AppPaths.ServiceDirectory)) Directory.Move(AppPaths.ServiceDirectory, stage + "-failed");
                 Directory.Move(previous, AppPaths.ServiceDirectory);
             }
-            if (oldStatus == ServiceControllerStatus.Running) Start();
+            if (oldStatus == ServiceControllerStatus.Running) Resume();
             throw;
         }
     }
@@ -114,6 +114,12 @@ public static class ServiceManager
     {
         DeploymentSecurity.RequireAdministrator(); VerifyRegistration();
         RunSc("config", AppPaths.ServiceName, "start=", "auto");
+        Resume();
+    }
+
+    private static void Resume()
+    {
+        // Installation must not change an existing service's automatic/manual startup mode.
         using var service = new ServiceController(AppPaths.ServiceName);
         if (service.Status == ServiceControllerStatus.StopPending) service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(45));
         if (service.Status == ServiceControllerStatus.Stopped) service.Start();

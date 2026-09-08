@@ -2,6 +2,11 @@ using System.ServiceProcess;
 using System.Threading.Channels;
 using IPKeep.Core;
 
+if (args.Length > 0)
+{
+    Environment.ExitCode = InstallerOperations.Run(args, AppContext.BaseDirectory);
+    return;
+}
 if (Environment.UserInteractive)
 {
     Console.WriteLine("Open IPKeep.exe to set up and manage the background service.");
@@ -44,15 +49,19 @@ sealed class IpKeepService : ServiceBase
         var engine = new CheckEngine(new PublicIpResolver(ipv4Http, ipv6Http, log), new IpKeepClient(updateHttp, log), log);
         while (!cancellationToken.IsCancellationRequested)
         {
-            bool success = false; int interval = 360;
+            bool success = false, authenticationRejected = false; int interval = 360;
             snapshot = snapshot with { State = "Checking", NextCheck = null, Message = "Checking your public IP address…" }; SaveStatus();
             try
             {
-                DeploymentSecurity.ValidateRuntime();
+                // The full installation sweep runs once at startup. Each cycle re-checks the
+                // directory permissions and the service binary, which is what actually gates
+                // execution, instead of reading an ACL for all 200 published files every time.
+                DeploymentSecurity.ValidateRuntime(includeAllFiles: false);
                 var connection = SettingsStore.Load(); interval = connection.Settings.IntervalMinutes;
                 log.SetSecret(connection.Token);
                 var result = await engine.RunAsync(connection.Settings, connection.Token, cancellationToken);
                 success = result.Success;
+                authenticationRejected = result.AuthenticationRejected;
                 snapshot = snapshot with { LastCheck = result, Message = result.Message };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
@@ -62,11 +71,16 @@ sealed class IpKeepService : ServiceBase
                 log.Write("ERROR", $"Check failed ({ex.GetType().Name}). {message}");
                 snapshot = snapshot with { Message = message };
             }
-            var delay = CheckSchedule.Delay(success, interval);
-            snapshot = snapshot with { State = success ? "Waiting" : "Needs attention", NextCheck = DateTimeOffset.Now + delay, ConsecutiveFailures = success ? 0 : snapshot.ConsecutiveFailures + 1 };
-            SaveStatus(); log.Write("INFO", $"Next check: {snapshot.NextCheck:yyyy-MM-dd HH:mm:ss zzz}; consecutive_failures={snapshot.ConsecutiveFailures}.");
+            int failures = success ? 0 : snapshot.ConsecutiveFailures + 1;
+            var delay = CheckSchedule.Delay(success, interval, failures, authenticationRejected);
+            snapshot = snapshot with { State = success ? "Waiting" : "Needs attention", NextCheck = delay is null ? null : DateTimeOffset.Now + delay, ConsecutiveFailures = failures };
+            SaveStatus();
+            log.Write("INFO", delay is null
+                ? $"Updates paused until a new token is saved or a check is requested; consecutive_failures={failures}."
+                : $"Next check: {snapshot.NextCheck:yyyy-MM-dd HH:mm:ss zzz}; consecutive_failures={failures}.");
             using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            wait.CancelAfter(delay);
+            // A null delay waits only for Check now or service stop, never a timer.
+            if (delay is not null) wait.CancelAfter(delay.Value);
             try { await wake.Reader.ReadAsync(wait.Token); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
         }

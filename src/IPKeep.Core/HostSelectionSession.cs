@@ -22,11 +22,38 @@ public sealed class HostSelectionSession
         return true;
     }
 
-    public ConnectionSettings Select(ClientSettings settings, string? hostname)
+    public string[] RestoreSelection(IEnumerable<string> previous)
+    {
+        if (!IsConnected) return [];
+        if (Hostnames.Count == 1) return [Hostnames[0]];
+        // Preserve all still-active choices, including an older oversized setup:
+        // the user must explicitly reduce it instead of silently losing hosts.
+        return previous.Distinct(StringComparer.Ordinal).Where(name => Hostnames.Contains(name, StringComparer.Ordinal)).ToArray();
+    }
+
+    public ConnectionSettings Select(ClientSettings settings, IEnumerable<string> hostnames)
     {
         if (connectedToken is null) throw new SettingsException("Load the hostnames for your token first.");
-        if (hostname is null || !Hostnames.Contains(hostname, StringComparer.Ordinal))
-            throw new SettingsException("Choose an existing hostname from the dropdown. Create new hostnames in the IPKeep admin panel.");
-        return new ConnectionSettings { Token = connectedToken, Settings = (settings with { Hostnames = [hostname] }).Validate() };
+        var selected = hostnames.Distinct(StringComparer.Ordinal).ToArray();
+        if (selected.Any(name => !Hostnames.Contains(name, StringComparer.Ordinal)))
+            throw new SettingsException("Choose existing hostnames from the dropdown. Create new hostnames in the IPKeep admin panel.");
+        return new ConnectionSettings { Token = connectedToken, Settings = (settings with { Hostnames = selected }).Validate() };
+    }
+
+    public async Task<ConnectionSettings> SelectAsync(ClientSettings settings, IEnumerable<string> hostnames,
+        IHostListClient client, CancellationToken cancellationToken)
+    {
+        var connection = Select(settings, hostnames);
+        int requestGeneration = generation;
+        var available = await client.ListHostsAsync(connection.Token, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (requestGeneration != generation)
+            throw new SettingsException("The token changed. Load its hostnames again before saving.");
+        if (connection.Settings.Hostnames.Any(name => !available.Contains(name, StringComparer.Ordinal)))
+        {
+            Reset();
+            throw new SettingsException("One or more selected hostnames are no longer active. Load your hostnames again and review your selection.");
+        }
+        return connection;
     }
 }

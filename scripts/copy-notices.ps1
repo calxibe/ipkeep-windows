@@ -1,6 +1,7 @@
+param([string]$PublishDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist/IPKeep'))
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
-$noticeRoot = Join-Path $repositoryRoot 'dist/IPKeep/third-party'
+$noticeRoot = Join-Path $PublishDirectory 'third-party'
 New-Item -ItemType Directory -Path $noticeRoot -Force | Out-Null
 $resolvedPackages = @{}
 $packageRoots = @()
@@ -12,7 +13,7 @@ foreach ($project in @('IPKeep.Desktop', 'IPKeep.Service')) {
     }
 }
 # Self-contained runtime packs are not always listed as ordinary package libraries.
-$runtime = Get-Content -LiteralPath (Join-Path $repositoryRoot 'dist/IPKeep/IPKeep.runtimeconfig.json') -Raw | ConvertFrom-Json
+$runtime = Get-Content -LiteralPath (Join-Path $PublishDirectory 'IPKeep.runtimeconfig.json') -Raw | ConvertFrom-Json
 foreach ($framework in $runtime.runtimeOptions.includedFrameworks) {
     $key = "$($framework.name).Runtime.win-x64/$($framework.version)"
     $resolvedPackages[$key] = $key.ToLowerInvariant()

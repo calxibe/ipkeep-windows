@@ -1,0 +1,14 @@
+IPKeep for Windows - unsigned beta
+
+This preview is for beta testing. It is not digitally signed. Windows may display an unknown publisher or SmartScreen warning.
+
+Setup installs IPKeep for all users on this computer. Your existing settings, encrypted tokens, hostnames, and activity logs are preserved.
+
+After a new installation, open IPKeep, add your token, choose your hostnames, and enable updates. An existing background service is updated automatically; a paused service stays paused.
+
+Uninstalling stops and removes the IPKeep service and application files. Local settings, tokens, and logs are retained so that you can reinstall. Your online account and hostnames are not deleted.
+
+Automatic application updates are not included. Install a newer beta manually when one is available.
+
+Source and license: https://github.com/calxibe/ipkeep-windows
+Support: https://github.com/calxibe/ipkeep-windows/issues

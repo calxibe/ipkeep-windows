@@ -2,7 +2,7 @@ name: Build and unsigned preview
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'installer/**']
     tags: ['v*-preview.*']
   pull_request:
   workflow_dispatch:
@@ -28,6 +28,19 @@ jobs:
         run: ./build.ps1
       - name: Package unsigned preview
         run: ./scripts/package.ps1 -Commit $env:GITHUB_SHA
+      - name: Build unsigned beta installer
+        run: ./scripts/build-installer.ps1
+      - name: Test installer on this disposable Windows runner
+        run: >-
+          dotnet run --project tests/IPKeep.InstallerTests/IPKeep.InstallerTests.csproj -c Release --
+          --disposable-runner "${{ github.workspace }}/dist/releases/IPKeep-1.0.0-preview.2-windows-x64-unsigned-setup.exe"
+      - name: Preserve installer test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installer-test-logs
+          path: dist/releases/installer-test-logs/
+          if-no-files-found: ignore
       - name: Preserve unsigned binaries for origin verification
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -39,7 +52,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-download
-          path: dist/releases/
+          path: |
+            dist/releases/*.exe
+            dist/releases/*.zip
+            dist/releases/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
 

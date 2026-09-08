@@ -58,12 +58,33 @@
             </ScrollViewer>
             <ScrollViewer x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="22" Padding="0,0,8,8">
-                    <StackPanel Spacing="6"><TextBlock x:Name="ConnectionTitle" Text="Connect this computer." Style="{StaticResource PageTitle}" TextWrapping="Wrap" /><TextBlock x:Name="ConnectionSubtitle" Text="Add your token, then choose a hostname from your account." Foreground="{StaticResource Muted}" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel Spacing="6"><TextBlock x:Name="ConnectionTitle" Text="Connect this computer." Style="{StaticResource PageTitle}" TextWrapping="Wrap" /><TextBlock x:Name="ConnectionSubtitle" Text="Add your token to connect this computer to your hostnames." Foreground="{StaticResource Muted}" TextWrapping="Wrap" /></StackPanel>
                     <Border Style="{StaticResource Card}"><ContentControl x:Name="ConnectionForm" HorizontalContentAlignment="Stretch"><StackPanel Spacing="14">
                         <PasswordBox x:Name="TokenBox" Header="1. IPKeep API token" PlaceholderText="Paste the token from the admin panel" PasswordRevealMode="Peek" PasswordChanged="Token_Changed" />
                         <TextBlock x:Name="TokenHint" Text="Your token is encrypted for your Windows user after verification. It never appears in logs." FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
                         <Button x:Name="LoadHostsButton" Content="Load my hostnames" Click="LoadHosts_Click" HorizontalAlignment="Left" />
-                        <ComboBox x:Name="HostnameBox" Header="2. Hostname for this computer" PlaceholderText="Load your hostnames first" IsEditable="False" HorizontalAlignment="Stretch" IsEnabled="False" SelectionChanged="Hostname_Changed" />
+                        <StackPanel x:Name="HostnameSection" Spacing="8" Visibility="Collapsed">
+                            <TextBlock x:Name="HostnameLabel" Text="2. Hostnames for this computer" />
+                            <Border x:Name="SingleHostnamePanel" BorderBrush="#E5EAF0" BorderThickness="1" CornerRadius="4" Padding="12,8" Visibility="Collapsed">
+                                <TextBlock x:Name="SingleHostnameText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                            </Border>
+                            <DropDownButton x:Name="HostnameDropdown" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Visibility="Collapsed" AutomationProperties.Name="Hostnames for this computer">
+                                <TextBlock x:Name="HostnameSummary" Text="Choose hostnames" TextTrimming="CharacterEllipsis" />
+                                <DropDownButton.Flyout>
+                                    <Flyout x:Name="HostnameFlyout" Opening="Hostnames_Opening" Placement="BottomEdgeAlignedLeft">
+                                        <Flyout.FlyoutPresenterStyle><Style TargetType="FlyoutPresenter"><Setter Property="Padding" Value="12" /><Setter Property="MaxWidth" Value="680" /></Style></Flyout.FlyoutPresenterStyle>
+                                        <StackPanel x:Name="HostnameFlyoutContent" Spacing="8" Width="360">
+                                            <TextBlock Text="Choose hostnames" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="HostnameSelectionCount" Text="0 of 5 selected" Foreground="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                            <ListView x:Name="HostnameList" SelectionMode="Multiple" IsMultiSelectCheckBoxEnabled="True" MaxHeight="288" SelectionChanged="Hostnames_Changed" ContainerContentChanging="Hostnames_ContainerChanging" AutomationProperties.Name="Select up to 5 hostnames">
+                                                <ListView.ItemContainerStyle><Style TargetType="ListViewItem"><Setter Property="MinHeight" Value="36" /><Setter Property="Padding" Value="8,4" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListView.ItemContainerStyle>
+                                                <ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ListView.ItemTemplate>
+                                            </ListView>
+                                        </StackPanel>
+                                    </Flyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </StackPanel>
                         <TextBlock x:Name="HostListHint" Text="Hostnames are created and managed only in the IPKeep admin panel." FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" />
                         <HyperlinkButton Content="Open the admin panel ↗" NavigateUri="https://admin.ipkeep.net/" HorizontalAlignment="Left" Padding="0,4" />
                         <StackPanel x:Name="HostOptionsPanel" Spacing="14" Visibility="Collapsed">
