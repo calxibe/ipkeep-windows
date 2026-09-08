@@ -756,6 +756,14 @@ AsyncTest("HTTP errors and redirects never masquerade as up-to-date or token fai
     }
     using var html = new HttpClient(new FakeHttp(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ReleaseJson("1.1.0", "stable")) })));
     Assert((await new AppUpdateClient(html).CheckAsync(ReleaseVersion.Parse("1.0.0"), default)).CheckIncomplete);
+    // JSON uses UTF-8; a broken charset header must not crash the startup check.
+    using var charset = new HttpClient(new FakeHttp(_ =>
+    {
+        var response = Json(ReleaseJson("1.1.0", "stable"));
+        response.Content.Headers.ContentType!.CharSet = "not-a-real-encoding";
+        return Task.FromResult(response);
+    }));
+    Assert((await new AppUpdateClient(charset).CheckAsync(ReleaseVersion.Parse("1.0.0"), default)).NewRelease?.Version.Text == "1.1.0");
 });
 AsyncTest("An available release survives a failure of the other channel without claiming full success", async () =>
 {

@@ -92,7 +92,7 @@ public sealed class AppUpdateClient(HttpClient http)
             if (response.Content.Headers.ContentType?.MediaType != "application/json") return (null, true);
             // Enforce the bound even for injected clients without the production buffer limit.
             await response.Content.LoadIntoBufferAsync(16384, cancellationToken);
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken), new JsonDocumentOptions { MaxDepth = 8 });
+            using var json = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync(cancellationToken), new JsonDocumentOptions { MaxDepth = 8 });
             var root = json.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return (null, true);
             var fields = root.EnumerateObject().Select(property => property.Name).ToArray();
