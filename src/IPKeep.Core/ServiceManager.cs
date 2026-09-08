@@ -97,10 +97,13 @@ public static class ServiceManager
     private static void CopyDirectory(string source, string destination)
     {
         DeploymentSecurity.RejectLinks(source);
+        DeploymentSecurity.SecureDirectory(destination);
         foreach (var file in Directory.EnumerateFiles(source))
         {
             DeploymentSecurity.RejectLinks(file);
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+            string target = Path.Combine(destination, Path.GetFileName(file));
+            File.Copy(file, target, true);
+            DeploymentSecurity.SecureProgramFile(target);
         }
         foreach (var folder in Directory.EnumerateDirectories(source))
         {

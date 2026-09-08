@@ -132,6 +132,18 @@ public static class DeploymentSecurity
         SecureDirectory(AppPaths.RuntimeDirectory, runtime: true);
     }
 
+    public static void SecureProgramFile(string path)
+    {
+        RequireAdministrator(); RejectLinks(path);
+        var acl = new FileSecurity();
+        acl.SetOwner(Admin); acl.SetAccessRuleProtection(true, false);
+        foreach (var sid in new[] { Admin, SystemSid })
+            acl.AddAccessRule(new(sid, FileSystemRights.FullControl, AccessControlType.Allow));
+        foreach (var sid in new[] { ServiceSid, Users })
+            acl.AddAccessRule(new(sid, FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+        new FileInfo(path).SetAccessControl(acl);
+    }
+
     public static void ValidateFile(string path, bool secret = false, bool runtime = false)
     {
         RejectLinks(path);

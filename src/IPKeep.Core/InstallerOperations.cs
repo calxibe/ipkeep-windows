@@ -1,6 +1,3 @@
-using System.Security.AccessControl;
-using System.Security.Principal;
-
 namespace IPKeep.Core;
 
 // Invoked by the bundled service executable before it enters the Windows service loop.
@@ -76,14 +73,7 @@ public static class InstallerOperations
         foreach (string file in Directory.EnumerateFiles(directory))
         {
             DeploymentSecurity.RejectLinks(file);
-            var security = new FileSecurity();
-            security.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
-            security.SetAccessRuleProtection(true, false);
-            foreach (var type in new[] { WellKnownSidType.BuiltinAdministratorsSid, WellKnownSidType.LocalSystemSid })
-                security.AddAccessRule(new(new SecurityIdentifier(type, null), FileSystemRights.FullControl, AccessControlType.Allow));
-            foreach (var type in new[] { WellKnownSidType.BuiltinUsersSid, WellKnownSidType.LocalServiceSid })
-                security.AddAccessRule(new(new SecurityIdentifier(type, null), FileSystemRights.ReadAndExecute, AccessControlType.Allow));
-            new FileInfo(file).SetAccessControl(security);
+            DeploymentSecurity.SecureProgramFile(file);
             DeploymentSecurity.ValidateFile(file);
         }
         foreach (string child in Directory.EnumerateDirectories(directory)) ProtectBundle(child);
