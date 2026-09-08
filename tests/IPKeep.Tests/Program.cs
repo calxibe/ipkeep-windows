@@ -654,6 +654,133 @@ Test("Installer cleanup only recognizes the service and GUID-named service backu
         Assert(!InstallerOperations.IsServiceDirectoryName(name));
 });
 
+Test("Release versions follow SemVer precedence including numeric previews and stable graduation", () =>
+{
+    string[] versions = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.1.0", "1.10.0", "2.0.0"];
+    for (int i = 0; i < versions.Length - 1; i++)
+    {
+        Assert(ReleaseVersion.Parse(versions[i]).CompareTo(ReleaseVersion.Parse(versions[i + 1])) < 0);
+        Assert(ReleaseVersion.Parse(versions[i + 1]).CompareTo(ReleaseVersion.Parse(versions[i])) > 0);
+    }
+    Assert(ReleaseVersion.Parse("1.0.0-preview.10").CompareTo(ReleaseVersion.Parse("1.0.0-preview.2")) > 0);
+    Assert(ReleaseVersion.Parse("1.0.0+build.1").CompareTo(ReleaseVersion.Parse("1.0.0+build.2")) == 0);
+    Assert(ReleaseVersion.Parse("1.0.0-preview.99999999999999999999").CompareTo(ReleaseVersion.Parse("1.0.0-preview.99")) > 0);
+    Assert(!AppUpdateClient.CurrentVersion.Text.Contains('+'));
+});
+Test("Malformed release versions cannot be offered as updates", () =>
+{
+    foreach (string version in new[] { "", "v1.0.0", "1.0", "01.0.0", "1.00.0", "1.0.0.1", "1.0.0-preview.01", "1.0.0-", "1.0.0+a..b", "1.0.0\n", " 1.0.0", new string('9', 201) })
+        Throws<FormatException>(() => ReleaseVersion.Parse(version));
+});
+string ReleaseJson(string version = "1.0.0-preview.3", string channel = "preview", string notes = "A useful change.\nAnother change.") => JsonSerializer.Serialize(new { app = "ipkeep-windows", channel, version, releaseDate = "2026-09-08T19:28:36Z", releaseNotes = notes });
+HttpResponseMessage NoRelease(string channel) => Json(JsonSerializer.Serialize(new { app = "ipkeep-windows", channel, code = "NO_RELEASE" }), HttpStatusCode.NotFound);
+AsyncTest("App update checks are anonymous, use fixed URLs, and accept an empty stable feed", async () =>
+{
+    var urls = new List<Uri>();
+    using var http = new HttpClient(new FakeHttp(request =>
+    {
+        Assert(request.Method == HttpMethod.Get && request.Content is null);
+        Assert(request.Headers.Authorization is null && !request.Headers.Contains("Cookie"));
+        Assert(request.Headers.All(header => !string.Join(' ', header.Value).Contains(token)));
+        urls.Add(request.RequestUri!);
+        return Task.FromResult(request.RequestUri == AppUpdateClient.StableEndpoint ? NoRelease("stable") : Json(ReleaseJson()));
+    }));
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0-preview.2"), default);
+    Assert(urls.Count == 2 && urls.Contains(AppUpdateClient.PreviewEndpoint) && urls.Contains(AppUpdateClient.StableEndpoint));
+    Assert(!result.CheckIncomplete && result.HasPublishedRelease && result.NewRelease?.Version.Text == "1.0.0-preview.3");
+    Assert(result.NewRelease!.ReleaseNotes == "A useful change.\nAnother change." && result.NewRelease.ReleaseDate.Offset == TimeSpan.Zero);
+    Assert(AppUpdateClient.ReleasesPage.AbsoluteUri == "https://github.com/calxibe/ipkeep-windows/releases");
+});
+AsyncTest("Stable app builds never query or offer preview releases", async () =>
+{
+    int requests = 0;
+    using var http = new HttpClient(new FakeHttp(request =>
+    {
+        requests++; Assert(request.RequestUri == AppUpdateClient.StableEndpoint);
+        return Task.FromResult(Json(ReleaseJson("1.1.0", "stable")));
+    }));
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0"), default);
+    Assert(requests == 1 && result.NewRelease?.Version.Text == "1.1.0");
+});
+AsyncTest("Preview builds choose the highest release, including the final stable version", async () =>
+{
+    using var http = new HttpClient(new FakeHttp(request => Task.FromResult(Json(request.RequestUri == AppUpdateClient.StableEndpoint
+        ? ReleaseJson("1.0.0", "stable") : ReleaseJson("1.0.0-preview.10")))));
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0-preview.2"), default);
+    Assert(result.NewRelease?.Version.Text == "1.0.0" && !result.CheckIncomplete);
+});
+AsyncTest("Equal versions, metadata-only changes, and withdrawn newer versions never offer a downgrade", async () =>
+{
+    foreach (string version in new[] { "1.0.0-preview.1", "1.0.0-preview.3", "1.0.0-preview.3+another.build" })
+    {
+        using var http = new HttpClient(new FakeHttp(request => Task.FromResult(request.RequestUri == AppUpdateClient.StableEndpoint ? NoRelease("stable") : Json(ReleaseJson(version)))));
+        var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0-preview.3"), default);
+        Assert(result.NewRelease is null && result.HasPublishedRelease && !result.CheckIncomplete);
+    }
+});
+AsyncTest("Empty channels are different from failed checks", async () =>
+{
+    using var http = new HttpClient(new FakeHttp(request => Task.FromResult(NoRelease(request.RequestUri == AppUpdateClient.StableEndpoint ? "stable" : "preview"))));
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0-preview.3"), default);
+    Assert(result.NewRelease is null && !result.HasPublishedRelease && !result.CheckIncomplete);
+});
+AsyncTest("Malformed, oversized, wrong-app and wrong-channel metadata is rejected", async () =>
+{
+    string valid = ReleaseJson();
+    string[] bad = ["not json", "[]", "{}", valid.Replace("ipkeep-windows", "other-app"), valid.Replace("\"preview\"", "\"stable\""),
+        valid.Replace("2026-09-08T19:28:36Z", "tomorrow"), valid.Replace("2026-09-08T19:28:36Z", "2026-09-08T19:28:36+02:00"),
+        valid.Replace("\"version\":", "\"version\":\"9.0.0-preview.1\",\"version\":"), ReleaseJson("1.0.0"),
+        ReleaseJson(notes: ""), ReleaseJson(notes: new string('a', 1001)), ReleaseJson(notes: "hidden\u0000control"), ReleaseJson(notes: new string('a', 17000))];
+    foreach (string body in bad)
+    {
+        using var http = new HttpClient(new FakeHttp(request => Task.FromResult(request.RequestUri == AppUpdateClient.StableEndpoint ? NoRelease("stable") : Json(body))));
+        var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0-preview.2"), default);
+        Assert(result.NewRelease is null && result.CheckIncomplete, body[..Math.Min(body.Length, 60)]);
+    }
+});
+AsyncTest("Release notes remain plain text and cannot choose the download destination", async () =>
+{
+    string notes = "<script>alert('test')</script>\n[Download](https://example.invalid/)";
+    using var http = new HttpClient(new FakeHttp(_ => Task.FromResult(Json(ReleaseJson("1.1.0", "stable", notes)))));
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0"), default);
+    Assert(result.NewRelease?.ReleaseNotes == notes);
+    Assert(AppUpdateClient.ReleasesPage.Host == "github.com");
+});
+AsyncTest("HTTP errors and redirects never masquerade as up-to-date or token failures", async () =>
+{
+    foreach (var status in new[] { HttpStatusCode.Redirect, HttpStatusCode.NotModified, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden, HttpStatusCode.NotFound, HttpStatusCode.TooManyRequests, HttpStatusCode.InternalServerError })
+    {
+        using var http = new HttpClient(new FakeHttp(_ => Task.FromResult(Json(token, status))));
+        var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0"), default);
+        Assert(result.CheckIncomplete && result.NewRelease is null && !result.HasPublishedRelease);
+    }
+    using var html = new HttpClient(new FakeHttp(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ReleaseJson("1.1.0", "stable")) })));
+    Assert((await new AppUpdateClient(html).CheckAsync(ReleaseVersion.Parse("1.0.0"), default)).CheckIncomplete);
+});
+AsyncTest("An available release survives a failure of the other channel without claiming full success", async () =>
+{
+    using var http = new HttpClient(new FakeHttp(request => request.RequestUri == AppUpdateClient.StableEndpoint
+        ? throw new HttpRequestException("Network unavailable") : Task.FromResult(Json(ReleaseJson()))));
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0-preview.2"), default);
+    Assert(result.NewRelease?.Version.Text == "1.0.0-preview.3" && result.CheckIncomplete);
+});
+AsyncTest("Window cancellation aborts app update checks; timeouts become retryable failures", async () =>
+{
+    using var cancel = new CancellationTokenSource();
+    using var http = new HttpClient(new FakeHttp(_ => { cancel.Cancel(); throw new OperationCanceledException(cancel.Token); }));
+    await ThrowsAsync<OperationCanceledException>(() => new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("1.0.0"), cancel.Token));
+    using var timedOut = new HttpClient(new FakeHttp(_ => throw new TaskCanceledException("timeout")));
+    Assert((await new AppUpdateClient(timedOut).CheckAsync(ReleaseVersion.Parse("1.0.0"), default)).CheckIncomplete);
+});
+
+if (args.Contains("--live-version")) AsyncTest("Live anonymous release metadata accepts preview and empty stable channels", async () =>
+{
+    using var http = AppUpdateClient.CreateHttpClient();
+    var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("0.0.0-preview.1"), default);
+    Assert(!result.CheckIncomplete && result.HasPublishedRelease && result.NewRelease is not null);
+    Console.WriteLine("  Latest release: " + result.NewRelease!.Version.Text);
+});
+
 if (args.Contains("--live-ipv4")) AsyncTest("Live anonymous IPv4 discovery from IPKeep over HTTPS", async () =>
 {
     using var v4 = NetworkClients.CreateDiscovery(false); using var v6 = NetworkClients.CreateDiscovery(true);

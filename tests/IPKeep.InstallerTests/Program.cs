@@ -89,9 +89,14 @@ Assert(Hash(AppPaths.ServiceExecutable) == serviceHash, "A failed upgrade lost t
 Assert(Setup("repair-after-failure") == 0, "Repair after failed upgrade did not succeed.");
 Pass("Failed service update reports a nonzero exit code, preserves previous service, and can be repaired");
 
-using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\IPKeep\Installer", writable: true)) key!.SetValue("Version", "99.0.0.0");
+string installedVersion;
+using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\IPKeep\Installer", writable: true))
+{
+    installedVersion = (string)key!.GetValue("Version")!;
+    key.SetValue("Version", "99.0.0.0");
+}
 Assert(Setup("downgrade-refused") != 0, "Installer overwrote a newer version.");
-using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\IPKeep\Installer", writable: true)) key!.SetValue("Version", "1.0.0.2");
+using (var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\IPKeep\Installer", writable: true)) key!.SetValue("Version", installedVersion);
 Assert(Setup("custom-path-refused", "/DIR=" + Path.Combine(Path.GetTempPath(), "IPKeep-wrong-location")) != 0, "Installer accepted a custom executable directory.");
 Pass("Downgrades and unsupported install paths are refused");
 

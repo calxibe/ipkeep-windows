@@ -2,7 +2,6 @@
 param(
     [string]$PublishDirectory = 'dist/IPKeep',
     [string]$OutputDirectory = 'dist/releases',
-    [ValidateRange(1, 65535)][int]$BetaNumber = 2,
     [string]$CompilerPath
 )
 $ErrorActionPreference = 'Stop'
@@ -32,11 +31,15 @@ try {
     if ($privateFiles.Count) { throw 'The published folder contains private/runtime files.' }
     [xml]$properties = Get-Content -LiteralPath Directory.Build.props -Raw
     $version = [string]$properties.Project.PropertyGroup.Version
-    if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid product version.' }
-    $installerName = "IPKeep-$version-preview.$BetaNumber-windows-x64-unsigned-setup.exe"
+    if ($version -notmatch '^\d+\.\d+\.\d+-preview\.[1-9][0-9]*$') { throw 'An unsigned beta installer requires a preview product version.' }
+    $numericVersion = [string]$properties.Project.PropertyGroup.FileVersion
+    if ($numericVersion -notmatch '^\d+\.\d+\.\d+\.\d+$' -or @($numericVersion.Split('.') | Where-Object { [int]$_ -gt 65535 }).Count) { throw 'Invalid installer file version.' }
+    $metadata = Get-Content -LiteralPath (Join-Path $publish 'build-info.json') -Raw | ConvertFrom-Json
+    if ($metadata.version -ne $version) { throw 'Published metadata does not match the installer version.' }
+    $installerName = "IPKeep-$version-windows-x64-unsigned-setup.exe"
     $installer = Join-Path $output $installerName
     if (Test-Path -LiteralPath $installer) { throw 'The installer already exists. Use a new output directory or beta number.' }
-    & $CompilerPath /Qp "/DPublishDir=$publish" "/DOutputDir=$output" "/DProductVersion=$version" "/DBetaNumber=$BetaNumber" (Join-Path $repositoryRoot 'installer/IPKeep.iss')
+    & $CompilerPath /Qp "/DPublishDir=$publish" "/DOutputDir=$output" "/DReleaseVersion=$version" "/DNumericVersion=$numericVersion" (Join-Path $repositoryRoot 'installer/IPKeep.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
     if ((Get-AuthenticodeSignature -LiteralPath $installer).Status -ne 'NotSigned') { throw 'Expected an explicitly unsigned beta installer.' }
     $checksum = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()

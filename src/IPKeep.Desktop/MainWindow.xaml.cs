@@ -15,6 +15,10 @@ namespace IPKeep.Desktop;
 public sealed partial class MainWindow : Window
 {
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer appUpdateTimer = new() { Interval = AppUpdateClient.CheckInterval };
+    private bool checkingAppUpdates;
+    private string? dismissedAppVersion;
+    private AppRelease? availableAppRelease;
     private bool busy;
     private string[] logLines = [];
     private string lastLog = "";
@@ -37,6 +41,11 @@ public sealed partial class MainWindow : Window
     {
         openSettingsOnLaunch = openSettings;
         InitializeComponent();
+        AppVersionText.Text = $"IPKeep for Windows · {AppUpdateClient.CurrentVersion.Text}";
+        InstalledVersionText.Text = $"Installed version: {AppUpdateClient.CurrentVersion.Text}";
+        AppUpdateCheckHint.Text = "Checks when you open the app and every six hours while it is open. "
+            + (AppUpdateClient.CurrentVersion.IsPreview ? "This preview checks for newer preview and stable releases." : "Checks stable releases only.");
+        AppUpdateBanner.CloseButtonClick += (_, _) => dismissedAppVersion = availableAppRelease?.Version.Text;
         AppWindow.Resize(new SizeInt32(1100, 850));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "IPKeep.ico"));
         AccessBanner.IsOpen = !DeploymentSecurity.IsAdministrator;
@@ -47,15 +56,76 @@ public sealed partial class MainWindow : Window
         LoadSettings(); RestoreRememberedToken(); ShowPage(openSettings ? "settings" : "overview"); Refresh();
         loadingSettings = false; UpdateLookupHint();
         refresh.Tick += (_, _) => Refresh(); refresh.Start();
+        appUpdateTimer.Tick += async (_, _) => await CheckAppUpdatesAsync();
+        appUpdateTimer.Start();
         Root.Loaded += InitialAddressLookup;
-        Closed += (_, _) => { windowClosed = true; refresh.Stop(); lookupProbes.Cancel(); windowLifetime.Cancel(); windowLifetime.Dispose(); };
+        Closed += (_, _) => { windowClosed = true; refresh.Stop(); appUpdateTimer.Stop(); lookupProbes.Cancel(); windowLifetime.Cancel(); windowLifetime.Dispose(); };
     }
 
     private async void InitialAddressLookup(object sender, RoutedEventArgs e)
     {
         Root.Loaded -= InitialAddressLookup;
-        if (openSettingsOnLaunch) await Task.WhenAll(DiscoverAddressesAsync(), OpenSettingsAsync());
-        else await DiscoverAddressesAsync();
+        if (openSettingsOnLaunch) await Task.WhenAll(DiscoverAddressesAsync(), OpenSettingsAsync(), CheckAppUpdatesAsync());
+        else await Task.WhenAll(DiscoverAddressesAsync(), CheckAppUpdatesAsync());
+    }
+
+    private void AppUpdates_Click(object sender, RoutedEventArgs e) => ShowPage("app-updates");
+    private async void CheckAppUpdates_Click(object sender, RoutedEventArgs e) => await CheckAppUpdatesAsync();
+
+    private async void DownloadAppUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            bool opened = await Windows.System.Launcher.LaunchUriAsync(AppUpdateClient.ReleasesPage);
+            if (!opened && !windowClosed) AppUpdateStatus.Text = "Could not open your browser. Visit github.com/calxibe/ipkeep-windows/releases to download the update.";
+        }
+        catch (Exception)
+        {
+            if (!windowClosed) AppUpdateStatus.Text = "Could not open your browser. Visit github.com/calxibe/ipkeep-windows/releases to download the update.";
+        }
+    }
+
+    private async Task CheckAppUpdatesAsync()
+    {
+        if (windowClosed || checkingAppUpdates) return;
+        checkingAppUpdates = true;
+        CheckAppUpdatesButton.IsEnabled = false;
+        AppUpdateStatus.Text = "Checking for updates…";
+        try
+        {
+            using var http = AppUpdateClient.CreateHttpClient();
+            var result = await new AppUpdateClient(http).CheckAsync(AppUpdateClient.CurrentVersion, windowLifetime.Token);
+            if (windowClosed) return;
+            // Keep an already offered release during an outage; a complete check can withdraw it.
+            availableAppRelease = result.NewRelease ?? (result.CheckIncomplete ? availableAppRelease : null);
+            AvailableAppUpdate.Visibility = availableAppRelease is null ? Visibility.Collapsed : Visibility.Visible;
+            if (availableAppRelease is { } release)
+            {
+                AvailableVersionText.Text = $"IPKeep {release.Version.Text} is available";
+                AppReleaseDateText.Text = $"Released {release.ReleaseDate.ToLocalTime():d MMM yyyy}";
+                AppReleaseNotes.Text = release.ReleaseNotes;
+                AppUpdateBanner.Title = $"IPKeep {release.Version.Text} is available";
+                AppUpdateBanner.IsOpen = AppUpdatesPage.Visibility != Visibility.Visible && dismissedAppVersion != release.Version.Text;
+                AppUpdateStatus.Text = result.CheckIncomplete
+                    ? "A newer version was found. Some release information could not be refreshed; try again later."
+                    : "A newer version is ready to download.";
+            }
+            else
+            {
+                AppUpdateBanner.IsOpen = false;
+                AppReleaseNotes.Text = "";
+                AppUpdateStatus.Text = result.CheckIncomplete ? "Could not check for updates. Check your connection and try again."
+                    : result.HasPublishedRelease ? "You're up to date."
+                    : "No release is currently published for this channel.";
+            }
+            if (!result.CheckIncomplete) AppUpdateStatus.Text += $" Last checked {DateTime.Now:g}.";
+        }
+        catch (OperationCanceledException) when (windowClosed) { }
+        finally
+        {
+            checkingAppUpdates = false;
+            if (!windowClosed) CheckAppUpdatesButton.IsEnabled = true;
+        }
     }
 
     private async void RefreshAddresses_Click(object sender, RoutedEventArgs e) => await DiscoverAddressesAsync();
@@ -180,7 +250,10 @@ public sealed partial class MainWindow : Window
         OverviewPage.Visibility = page == "overview" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         ActivityPage.Visibility = page == "activity" ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var (button, name) in new[] { (OverviewNav, "overview"), (SettingsNav, "settings"), (ActivityNav, "activity") })
+        AppUpdatesPage.Visibility = page == "app-updates" ? Visibility.Visible : Visibility.Collapsed;
+        AccessBanner.IsOpen = page != "app-updates" && !DeploymentSecurity.IsAdministrator;
+        AppUpdateBanner.IsOpen = page != "app-updates" && availableAppRelease is not null && dismissedAppVersion != availableAppRelease.Version.Text;
+        foreach (var (button, name) in new[] { (OverviewNav, "overview"), (SettingsNav, "settings"), (ActivityNav, "activity"), (AppUpdatesNav, "app-updates") })
         { button.Background = new SolidColorBrush(name == page ? ColorHelper.FromArgb(255, 235, 241, 253) : Colors.Transparent); button.Foreground = new SolidColorBrush(name == page ? ColorHelper.FromArgb(255, 40, 95, 213) : ColorHelper.FromArgb(255, 100, 116, 139)); }
     }
     private void Overview_Click(object sender, RoutedEventArgs e) => ShowPage("overview");

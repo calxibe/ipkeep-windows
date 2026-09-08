@@ -12,18 +12,42 @@
                     <Button x:Name="OverviewNav" Style="{StaticResource NavButton}" Click="Overview_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE80F;" FontSize="18" /><TextBlock Text="Overview" /></StackPanel></Button>
                     <Button x:Name="SettingsNav" Style="{StaticResource NavButton}" Click="Settings_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE713;" FontSize="18" /><TextBlock Text="Settings" /></StackPanel></Button>
                     <Button x:Name="ActivityNav" Style="{StaticResource NavButton}" Click="Activity_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE81C;" FontSize="18" /><TextBlock Text="Activity" /></StackPanel></Button>
+                    <Button x:Name="AppUpdatesNav" Style="{StaticResource NavButton}" Click="AppUpdates_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE896;" FontSize="18" /><TextBlock Text="App updates" /></StackPanel></Button>
                 </StackPanel>
                 <StackPanel Grid.Row="3" Spacing="8">
                     <HyperlinkButton Content="Open IPKeep website ↗" NavigateUri="https://admin.ipkeep.net/" FontSize="12" Padding="8" />
-                    <TextBlock Text="IPKeep for Windows · 1.0" FontSize="11" Foreground="{StaticResource Muted}" Margin="8,0,0,0" />
+                    <TextBlock x:Name="AppVersionText" FontSize="11" Foreground="{StaticResource Muted}" Margin="8,0,0,0" TextWrapping="Wrap" />
                 </StackPanel>
             </Grid>
         </Border>
         <Grid Grid.Column="1" Padding="32,24" RowSpacing="16">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <StackPanel Spacing="12">
             <InfoBar x:Name="AccessBanner" IsOpen="True" IsClosable="False" Severity="Informational" Title="Service changes" Message="Allow changes to save settings or manage the background service.">
                 <InfoBar.ActionButton><Button Content="Allow changes" Click="Elevate_Click" /></InfoBar.ActionButton>
             </InfoBar>
+            <InfoBar x:Name="AppUpdateBanner" IsOpen="False" IsClosable="True" Severity="Informational" Title="A new version of IPKeep is available.">
+                <InfoBar.ActionButton><Button Content="View changes" Click="AppUpdates_Click" /></InfoBar.ActionButton>
+            </InfoBar>
+            </StackPanel>
+            <ScrollViewer x:Name="AppUpdatesPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="24" Padding="0,0,8,8">
+                    <StackPanel Spacing="6"><TextBlock Text="App updates" Style="{StaticResource PageTitle}" /><TextBlock Text="Get the latest improvements to IPKeep for Windows." TextWrapping="Wrap" Foreground="{StaticResource Muted}" /></StackPanel>
+                    <Border x:Name="AvailableAppUpdate" Style="{StaticResource Card}" Visibility="Collapsed"><StackPanel Spacing="14">
+                        <TextBlock x:Name="AvailableVersionText" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="AppReleaseDateText" Foreground="{StaticResource Muted}" />
+                        <TextBox x:Name="AppReleaseNotes" Header="What's changed" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="112" MaxHeight="240" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Release notes" />
+                        <Button Content="Download now" Click="DownloadAppUpdate_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left" Padding="20,10" />
+                        <TextBlock Text="Opens GitHub Releases in your browser. Download and run the newer installer to update IPKeep." TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" />
+                    </StackPanel></Border>
+                    <Border Style="{StaticResource Card}"><StackPanel Spacing="14">
+                        <TextBlock x:Name="InstalledVersionText" FontWeight="SemiBold" />
+                        <TextBlock x:Name="AppUpdateStatus" Text="Checking for updates…" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        <Button x:Name="CheckAppUpdatesButton" Content="Check for updates" Click="CheckAppUpdates_Click" />
+                        <TextBlock x:Name="AppUpdateCheckHint" TextWrapping="Wrap" Foreground="{StaticResource Muted}" FontSize="12" />
+                    </StackPanel></Border>
+                </StackPanel>
+            </ScrollViewer>
             <ScrollViewer x:Name="OverviewPage" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="24" Padding="0,0,8,8">
                     <StackPanel Spacing="6"><TextBlock Text="Your connection, at a glance." Style="{StaticResource PageTitle}" TextWrapping="Wrap" /><TextBlock Text="Background updates for your IPKeep hostnames." Foreground="{StaticResource Muted}" /></StackPanel>

@@ -4,14 +4,12 @@
 #ifndef OutputDir
   #error OutputDir must point to the installer output directory.
 #endif
-#ifndef ProductVersion
-  #define ProductVersion "1.0.0"
+#ifndef ReleaseVersion
+  #error ReleaseVersion must match the compiled application version.
 #endif
-#ifndef BetaNumber
-  #define BetaNumber "2"
+#ifndef NumericVersion
+  #error NumericVersion must specify the four-part installer file version.
 #endif
-#define ReleaseVersion ProductVersion + "-preview." + BetaNumber
-#define NumericVersion ProductVersion + "." + BetaNumber
 
 [Setup]
 AppId={{B43D7C64-8CCA-44BD-B5E8-01BFE865A142}

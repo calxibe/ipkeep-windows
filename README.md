@@ -2,7 +2,7 @@
 
 A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose up to five existing hostnames, and let the service check your public IP in the background.
 
-**Version 1.0.0** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
+**Version 1.0.0 Preview 3** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
 [Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
 
@@ -20,10 +20,11 @@ This repository contains the Windows client and service. An **unsigned beta inst
 - IPv4 and optional IPv6 updates, depending on the selected provider.
 - Encrypted token storage using Windows DPAPI and restricted file permissions.
 - Searchable activity in a compact table with local timestamps and rotating log files.
+- Automatic app update checks, release notes, and a download link to GitHub Releases.
 
 ## Getting started
 
-1. Download `IPKeep-1.0.0-preview.2-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
+1. Download `IPKeep-1.0.0-preview.3-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
 2. Open `IPKeep.exe`. Viewing status/activity and verifying your own token do not require administrator access.
 3. Open **Settings**. For initial service setup, choose **Allow changes** and approve the Windows administrator prompt; the elevated app returns to Settings.
 4. Create your hostname and an API token at [admin.ipkeep.net](https://admin.ipkeep.net/). Hostnames can only be created and managed in that admin panel.
@@ -50,13 +51,23 @@ When the API returns `dnsUpdated: false`, the app reports **IP recorded. DNS pub
 - **Activity:** the latest 200 entries in a compact **Time (local), Level, Message** table, newest first, refreshed every two seconds. Timestamps are converted to the computer's local timezone using the offset applicable to each event, including daylight-saving changes. The short format is `07 Sep, 14:32:06`; hover a timestamp for its full date/year and offset. Timestamps inside messages, such as the next check time, are also displayed locally. Long messages wrap within their column. Filtering matches both the displayed local text and the original log line. Malformed/incomplete lines remain visible with an unavailable timestamp. **Open log folder** opens the original files, whose full timestamps and offsets are preserved.
 - **Service maintenance:** hidden until the token is successfully validated, unless the IPKeep service is already installed. An installed service keeps maintenance visible even when stopped or when the token is missing/rejected, so it can still be repaired or removed. A valid token can reveal maintenance even if its account has no active hostnames; saving updates still requires a hostname. Maintenance installs an updated service from the adjacent `service` folder, or removes the service registration. Changes require administrator access. Removal retains settings and logs. The previous service directory is retained under a uniquely named `service-previous-*` folder when updating, and restored if installation fails.
 
+## App updates
+
+The desktop checks for new application releases when it opens and every six hours while it remains open. **App updates → Check for updates** checks manually, without a token or administrator access. A newer release shows a banner on any page; **View changes** opens its version, local release date, and short notes in a read-only, scrollable text box. **Download now** opens [GitHub Releases](https://github.com/calxibe/ipkeep-windows/releases) in your default browser. Download and run the newer installer yourself; automatic downloading/installation is not implemented. Preview 2 and earlier need this first upgrade manually before they can notify you about later versions.
+
+Requests use the public `GET https://api.ipkeep.net/version` feed. Preview builds also check `?channel=preview` and offer the highest newer semantic version across both channels, including graduation to stable. Stable builds check only stable releases. Equal/older releases and build-metadata-only differences are not offered. Empty channels (`NO_RELEASE`) are normal; failures show retry guidance on the App updates page, never a token error or a false up-to-date result. An already found update remains available during an outage. Dismissing its banner lasts for this window; the release details remain on the App updates page. Closing the window cancels requests and stops application update checks; the DNS service keeps its independent schedule.
+
+These requests send no token, hostname, cookies, or IP lookup results. Redirects are disabled, responses are limited to 16 KB, and requests time out after ten seconds. Notes are plain text, capped at 1,000 characters. The download destination is fixed in the app and cannot be changed by the feed. The API caches metadata for ten minutes, so newly published releases may take that long to appear.
+
+`Directory.Build.props` supplies the complete release `Version` (including `-preview.N`) to the compiled desktop/service, metadata, ZIP, and installer. `FileVersion` supplies the installer's monotonically increasing four-part Windows version. Increment both for each preview; a final stable installer must also have a higher Windows file version than the last preview. Packaging checks the compiled assemblies against the declared release version and rejects a mismatched Git tag.
+
 ## Network contract
 
 Customer API tokens authorize exactly two operations: hostname listing and address updates. `GET https://api.ipkeep.net/hosts` returns `{ "hosts": [{ "hostname": "home.a.ipkeep.net" }] }` for the token owner's active hostnames, or an empty array. The client accepts only valid managed hostnames, binds the selection to the token that loaded the list, and retrieves the list again before saving. Empty, failed, or stale lists cannot enable updates.
 
 Updates are `POST https://api.ipkeep.net/update`, with JSON containing `hostname` and the available `ipv4` / `ipv6` fields. Both authenticated endpoints use `Authorization: Bearer <IPKeep token>`. Redirects and cookies are disabled. Their URLs are fixed; there is no editable URL that could receive the token. HTTP response bodies, authentication headers, and tokens are never logged. A 401/403 asks for a new or enabled token; a 404 asks the user to check the hostname/account/paused state.
 
-Client tokens cannot create, delete, rename, enable, or pause hostnames; manage accounts, tokens, authentication or sessions; read account activity; or access internal DNS-node routes. Hostname management requires the admin panel's authenticated browser session. `/ip` is anonymous and is not a third token capability. Keep this two-operation token boundary when proposing changes. The Windows client contains no infrastructure credentials and makes no direct DNS-provider API requests.
+Client tokens cannot create, delete, rename, enable, or pause hostnames; manage accounts, tokens, authentication or sessions; read account activity; or access internal DNS-node routes. Hostname management requires the admin panel's authenticated browser session. `/ip` and `/version` are anonymous, not additional token capabilities. Keep this two-operation token boundary when proposing changes. The Windows client contains no infrastructure credentials and makes no direct DNS-provider API requests.
 
 Public IP discovery sends anonymous HTTPS GET requests to the selected provider. No lookup provider receives the IPKeep token, hostname, or update body. The free alternatives use these documented endpoints:
 
@@ -111,20 +122,22 @@ cd ipkeep-windows
 ./build.ps1 -OutputDirectory dist/IPKeep-multihost  # build separately while another copy is open
 # Package a fresh publish and build the unsigned beta installer (Inno Setup 6.7+):
 ./scripts/package.ps1 -Commit (git rev-parse HEAD)
-./scripts/build-installer.ps1 -BetaNumber 2
+./scripts/build-installer.ps1
 # Tests only:
 dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release
 # Optional: also verify the anonymous IPv4 discovery endpoint live (no token):
 dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live-ipv4
 # Optional: verify anonymous IPv4 discovery against every dropdown provider:
 dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live-providers
+# Optional: also check the anonymous release feeds live:
+dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live-version
 ```
 
 Building never installs, starts, or stops a service and does not send production updates. Tests cover request destination/authentication, hostname-list parsing, empty/invalid lists, token-bound selection and stale-load rejection, provider persistence/defaults and routing of update addresses, independent concurrent probes and stale-result cancellation, response validation/redaction, error handling, IPKeep JSON and plain-text discovery, separate IPv4/IPv6 transports (including real loopback sockets), hostname/CIDR validation, partial failures, IPv6 omission, ignored networks, cancellation, non-overlapping checks, retry decisions, log retention, atomic saves, Windows encryption, and the workspace runtime guard. Default tests use fake responses and local loopback connections; only the explicit `--live-ipv4` / `--live-providers` options contact public discovery endpoints.
 
 ## Validation and remaining release checks
 
-The current source has 57 isolated tests. These cover HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, and installer command/cleanup boundaries. Native layouts and live anonymous IPv4 discovery have also been inspected during development.
+The current source has 69 isolated tests. These cover HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
 
 The GitHub Windows build compiles the installer using [Inno Setup](https://jrsoftware.org/isinfo.php) and runs `tests/IPKeep.InstallerTests` on a disposable administrator runner. That suite exercises fresh setup, shortcuts, Installed Apps registration, running/paused/disabled service upgrades, a blocked service update and repair, downgrade/path refusal, uninstall, reinstall, and retention of settings/connection/activity files. Its deliberately invalid encrypted connection cannot authorize DNS updates. The suite refuses to run on a normal workstation or one with existing IPKeep files/data. Installer logs are retained as a separate build artifact.
 
