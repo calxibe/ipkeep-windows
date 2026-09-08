@@ -47,7 +47,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(new SizeInt32(1100, 850));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "IPKeep.ico"));
         InitializeTheme();
-        AccessBanner.IsOpen = !DeploymentSecurity.IsAdministrator;
+        InitializeAccessHint();
         SetEditingState(DeploymentSecurity.IsAdministrator);
         RepairButton.IsEnabled = RemoveButton.IsEnabled = DeploymentSecurity.IsAdministrator;
         IpLookupBox.ItemsSource = lookupProbes.Choices;
@@ -58,7 +58,7 @@ public sealed partial class MainWindow : Window
         appUpdateTimer.Tick += async (_, _) => await CheckAppUpdatesAsync();
         appUpdateTimer.Start();
         Root.Loaded += InitialAddressLookup;
-        Closed += (_, _) => { windowClosed = true; StopWatchingTheme(); refresh.Stop(); appUpdateTimer.Stop(); lookupProbes.Cancel(); windowLifetime.Cancel(); windowLifetime.Dispose(); };
+        Closed += (_, _) => { windowClosed = true; StopAccessHint(); StopWatchingTheme(); refresh.Stop(); appUpdateTimer.Stop(); lookupProbes.Cancel(); windowLifetime.Cancel(); windowLifetime.Dispose(); };
     }
 
     private async void InitialAddressLookup(object sender, RoutedEventArgs e)
@@ -250,7 +250,8 @@ public sealed partial class MainWindow : Window
         SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         ActivityPage.Visibility = page == "activity" ? Visibility.Visible : Visibility.Collapsed;
         AppUpdatesPage.Visibility = page == "app-updates" ? Visibility.Visible : Visibility.Collapsed;
-        AccessBanner.IsOpen = page != "app-updates" && !DeploymentSecurity.IsAdministrator;
+        AccessBanner.IsOpen = page == "settings" && !DeploymentSecurity.IsAdministrator;
+        if (!AccessBanner.IsOpen) StopAccessHint();
         AppUpdateBanner.IsOpen = page != "app-updates" && availableAppRelease is not null && dismissedAppVersion != availableAppRelease.Version.Text;
         foreach (var (button, name) in new[] { (OverviewNav, "overview"), (SettingsNav, "settings"), (ActivityNav, "activity"), (AppUpdatesNav, "app-updates") })
             button.Style = (Style)Application.Current.Resources[name == page ? "SelectedNavButton" : "NavButton"];
@@ -291,8 +292,7 @@ public sealed partial class MainWindow : Window
         TokenHint.Text = remembered
             ? "Your token is remembered securely for this Windows user. Replace it to connect another account."
             : "Your token is loaded, but could not be remembered. You may need to enter it again next time.";
-        ConnectionTitle.Text = "Your IPKeep connection.";
-        ConnectionSubtitle.Text = remembered ? "Your saved token is restored. Connect this computer to your hostnames." : "Connect this computer to your hostnames.";
+        UpdateSetupState();
     }
 
     private bool RememberToken(string token)
@@ -309,8 +309,6 @@ public sealed partial class MainWindow : Window
         hostSelection.Reset(); ClearHostnameChoices();
         HostListHint.Text = "Load the hostnames for this token before selecting them.";
         TokenHint.Text = "Load your hostnames to verify and securely remember this token for your Windows user.";
-        ConnectionTitle.Text = "Connect this computer.";
-        ConnectionSubtitle.Text = "Add your token to connect this computer to your hostnames.";
         SetEditingState(!busy && DeploymentSecurity.IsAdministrator);
     }
 
@@ -448,6 +446,7 @@ public sealed partial class MainWindow : Window
         {
             serviceStatus = ServiceManager.GetStatus();
             UpdateMaintenanceVisibility();
+            UpdateSetupState();
 
             // The status file changes about as often as a check runs, and the settings file
             // only when the user saves. Re-reading and re-parsing both every two seconds, plus
@@ -600,11 +599,12 @@ public sealed partial class MainWindow : Window
     }
     private static string[] Lines(string text) => text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     private void UpdateMaintenanceVisibility() => ServiceMaintenanceExpander.Visibility =
-        serviceStatus is not null || hostSelection.IsConnected ? Visibility.Visible : Visibility.Collapsed;
+        serviceStatus is not null ? Visibility.Visible : Visibility.Collapsed;
 
     private void SetEditingState(bool enabled)
     {
         UpdateMaintenanceVisibility();
+        UpdateSetupState();
         IgnoreBox.IsReadOnly = !enabled;
         TokenBox.IsEnabled = LoadHostsButton.IsEnabled = !busy;
         IntervalBox.IsEnabled = IPv6Switch.IsEnabled = enabled;
@@ -612,7 +612,7 @@ public sealed partial class MainWindow : Window
         HostnameSection.Visibility = hasVerifiedHosts ? Visibility.Visible : Visibility.Collapsed;
         SingleHostnamePanel.Visibility = hasVerifiedHosts && hostSelection.Hostnames.Count == 1 ? Visibility.Visible : Visibility.Collapsed;
         SingleHostnameText.Text = hostSelection.Hostnames.Count == 1 ? hostSelection.Hostnames[0] : "";
-        HostnameLabel.Text = hostSelection.Hostnames.Count == 1 ? "2. Hostname for this computer" : "2. Hostnames for this computer";
+        HostnameLabel.Text = hostSelection.Hostnames.Count == 1 ? "Hostname for this computer" : "Hostnames for this computer";
         HostnameDropdown.Visibility = hasVerifiedHosts && hostSelection.Hostnames.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         HostnameDropdown.IsEnabled = HostnameList.IsEnabled = !busy && hasVerifiedHosts;
         if (busy || !hasVerifiedHosts) HostnameFlyout.Hide();

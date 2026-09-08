@@ -23,8 +23,18 @@
         <Grid Grid.Column="1" Padding="32,24" RowSpacing="16">
             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
             <StackPanel Spacing="12">
-            <InfoBar x:Name="AccessBanner" IsOpen="True" IsClosable="False" Severity="Informational" Title="Service changes" Message="Allow changes to save settings or manage the background service.">
-                <InfoBar.ActionButton><Button Content="Allow changes" Click="Elevate_Click" /></InfoBar.ActionButton>
+            <InfoBar x:Name="AccessBanner" IsOpen="False" IsClosable="False" Severity="Informational" AutomationProperties.Name="Service changes" HorizontalContentAlignment="Stretch">
+                <Grid ColumnSpacing="12" Margin="0,0,12,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="Service changes" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="Allow changes to save settings or manage the background service." TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Grid Grid.Column="2">
+                        <Canvas x:Name="AccessGlowHost" IsHitTestVisible="False" />
+                        <Button x:Name="AllowChangesButton" Content="Allow changes" Click="Elevate_Click" Background="{ThemeResource Surface}">
+                            <Button.Resources><SolidColorBrush x:Key="AccessHintGlowBrush" Color="{ThemeResource AccessHintGlowColor}" /></Button.Resources>
+                        </Button>
+                    </Grid>
+                </Grid>
             </InfoBar>
             <InfoBar x:Name="AppUpdateBanner" IsOpen="False" IsClosable="True" Severity="Informational" Title="A new version of IPKeep is available.">
                 <InfoBar.ActionButton><Button Content="View changes" Click="AppUpdates_Click" /></InfoBar.ActionButton>
@@ -82,13 +92,27 @@
             </ScrollViewer>
             <ScrollViewer x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="22" Padding="0,0,8,8">
-                    <StackPanel Spacing="6"><TextBlock x:Name="ConnectionTitle" Text="Connect this computer." Style="{StaticResource PageTitle}" TextWrapping="Wrap" /><TextBlock x:Name="ConnectionSubtitle" Text="Add your token to connect this computer to your hostnames." Foreground="{ThemeResource Muted}" TextWrapping="Wrap" /></StackPanel>
+                    <StackPanel Spacing="6"><TextBlock x:Name="ConnectionTitle" Text="Set up this computer." Style="{StaticResource PageTitle}" TextWrapping="Wrap" /><TextBlock x:Name="ConnectionSubtitle" Text="Install the background service and verify your token to finish setup." Foreground="{ThemeResource Muted}" TextWrapping="Wrap" /></StackPanel>
+                    <Border Style="{StaticResource Card}"><StackPanel Spacing="12">
+                        <TextBlock Text="1. Background service" Style="{StaticResource SectionTitle}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="ServiceSetupDot" Width="8" Height="8" Style="{StaticResource WarningStatusDot}" />
+                            <TextBlock x:Name="ServiceSetupStatus" Text="Not installed" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                        <TextBlock x:Name="ServiceSetupHint" Text="Install the service so IPKeep can update your hostnames even when this window is closed. Then connect your account below." Foreground="{ThemeResource Muted}" TextWrapping="Wrap" />
+                        <Button x:Name="InstallServiceButton" Content="Install service" Style="{StaticResource AccentButtonStyle}" Click="InstallService_Click" Padding="20,10" />
+                    </StackPanel></Border>
                     <Border Style="{StaticResource Card}"><ContentControl x:Name="ConnectionForm" HorizontalContentAlignment="Stretch"><StackPanel Spacing="14">
-                        <PasswordBox x:Name="TokenBox" Header="1. IPKeep API token" PlaceholderText="Paste the token from the admin panel" PasswordRevealMode="Peek" PasswordChanged="Token_Changed" />
+                        <TextBlock Text="2. Connect your account" Style="{StaticResource SectionTitle}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="TokenSetupDot" Width="8" Height="8" Style="{StaticResource WarningStatusDot}" />
+                            <TextBlock x:Name="TokenSetupStatus" Text="Token required" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                        <PasswordBox x:Name="TokenBox" Header="IPKeep API token" PlaceholderText="Paste the token from the admin panel" PasswordRevealMode="Peek" PasswordChanged="Token_Changed" />
                         <TextBlock x:Name="TokenHint" Text="Your token is encrypted for your Windows user after verification. It never appears in logs." FontSize="12" Foreground="{ThemeResource Muted}" TextWrapping="Wrap" />
                         <Button x:Name="LoadHostsButton" Content="Load my hostnames" Click="LoadHosts_Click" HorizontalAlignment="Left" />
                         <StackPanel x:Name="HostnameSection" Spacing="8" Visibility="Collapsed">
-                            <TextBlock x:Name="HostnameLabel" Text="2. Hostnames for this computer" />
+                            <TextBlock x:Name="HostnameLabel" Text="Hostnames for this computer" />
                             <Border x:Name="SingleHostnamePanel" BorderBrush="{ThemeResource SurfaceBorder}" BorderThickness="1" CornerRadius="4" Padding="12,8" Visibility="Collapsed">
                                 <TextBlock x:Name="SingleHostnameText" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
                             </Border>
@@ -136,8 +160,8 @@
                         </StackPanel>
                     </StackPanel></ContentControl></Border>
                     <Expander x:Name="ServiceMaintenanceExpander" Header="Service maintenance" Visibility="Collapsed" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"><StackPanel Spacing="12">
-                        <TextBlock Text="Install an updated service from this download, or remove the background service. Removing it keeps your saved connection and activity." TextWrapping="Wrap" Foreground="{ThemeResource Muted}" />
-                        <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="RepairButton" Content="Install / update service" Click="Repair_Click" /><Button x:Name="RemoveButton" Content="Remove service" Click="Remove_Click" /></StackPanel>
+                        <TextBlock Text="Repair or update the installed service from this download, or remove it. Removing it keeps your saved connection and activity." TextWrapping="Wrap" Foreground="{ThemeResource Muted}" />
+                        <StackPanel Orientation="Horizontal" Spacing="10"><Button x:Name="RepairButton" Content="Repair / update service" Click="Repair_Click" /><Button x:Name="RemoveButton" Content="Remove service" Click="Remove_Click" /></StackPanel>
                     </StackPanel></Expander>
                 </StackPanel>
             </ScrollViewer>
