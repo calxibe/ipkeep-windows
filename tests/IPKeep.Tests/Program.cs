@@ -808,6 +808,19 @@ if (args.Contains("--live-providers")) AsyncTest("Live anonymous IPv4 comparison
     }
 });
 
+Test("Network bursts wait for quiet, stale callbacks do not wake early, and disposal cancels wakes", () =>
+{
+    var clock = new NetworkTestClock(); int wakes = 0;
+    var debounce = new NetworkChangeDebouncer(() => wakes++, clock);
+    debounce.Signal(); clock.Advance(8); debounce.Signal();
+    clock.Advance(2); clock.Fire(); Assert(wakes == 0, "Old timer callback woke too early");
+    clock.Advance(8); clock.Fire(); Assert(wakes == 1);
+    clock.Fire(); Assert(wakes == 1, "One event burst must produce one wake");
+    debounce.Signal(); clock.Advance(10); clock.Fire(); Assert(wakes == 2);
+    debounce.Signal(); debounce.Dispose(); clock.Advance(20); clock.Fire(); debounce.Signal(); clock.Fire();
+    Assert(wakes == 2, "Stopped services must not be woken");
+});
+
 foreach (var test in tests)
 {
     try { await test.Run(); Console.WriteLine("PASS " + test.Name); passed++; }
@@ -817,6 +830,23 @@ Console.WriteLine($"{passed}/{tests.Count} tests passed. No installed services o
 
 sealed class FakeHttp(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
 { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) { cancellationToken.ThrowIfCancellationRequested(); return handler(request); } }
+sealed class NetworkTestClock : TimeProvider
+{
+    private long ticks;
+    private Action? fire;
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+    public override long GetTimestamp() => ticks;
+    public void Advance(int seconds) => ticks += TimeSpan.FromSeconds(seconds).Ticks;
+    public void Fire() => fire?.Invoke();
+    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+    { fire = () => callback(state); return new NetworkTestTimer(); }
+    private sealed class NetworkTestTimer : ITimer
+    {
+        public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+        public void Dispose() { }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+}
 sealed class MemoryLog : IActivityLog
 { public List<string> Messages { get; } = []; public void Write(string level, string message) => Messages.Add(level + " " + message); }
 sealed class FakeResolver : IPublicIpResolver

@@ -1,5 +1,6 @@
 using System.ServiceProcess;
 using System.Threading.Channels;
+using System.Net.NetworkInformation;
 using IPKeep.Core;
 
 if (args.Length > 0)
@@ -21,18 +22,35 @@ sealed class IpKeepService : ServiceBase
     private readonly ActivityLog log = new(AppPaths.LogFile);
     private Task? worker;
     private ServiceSnapshot snapshot = new();
+    private NetworkChangeDebouncer? networkChanges;
+    private int automaticChecksPaused, manualCheckRequested;
 
     // LocalService cannot create Windows Event Log sources. File logs are provisioned by the installer.
     public IpKeepService() { ServiceName = AppPaths.ServiceName; CanStop = true; CanShutdown = true; AutoLog = false; }
     protected override void OnStart(string[] args)
     {
         DeploymentSecurity.ValidateRuntime();
+        networkChanges = new NetworkChangeDebouncer(() => {
+            if (!stopping.IsCancellationRequested && Volatile.Read(ref automaticChecksPaused) == 0) wake.Writer.TryWrite(false);
+        });
+        NetworkChange.NetworkAddressChanged += OnAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged += OnAvailabilityChanged;
         log.Write("INFO", "IPKeep service started. Checking immediately; failed checks retry in 5 minutes.");
         worker = Task.Run(() => RunAsync(stopping.Token));
     }
-    protected override void OnCustomCommand(int command) { if (command == 128) wake.Writer.TryWrite(true); }
+    protected override void OnCustomCommand(int command)
+    {
+        if (command != 128) return;
+        // Preserve a manual request even when a network wake already occupies the bounded queue.
+        Interlocked.Exchange(ref manualCheckRequested, 1); wake.Writer.TryWrite(true);
+    }
+    private void OnAddressChanged(object? sender, EventArgs args) => networkChanges?.Signal();
+    private void OnAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs args) { if (args.IsAvailable) networkChanges?.Signal(); }
     protected override void OnStop()
     {
+        NetworkChange.NetworkAddressChanged -= OnAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged -= OnAvailabilityChanged;
+        networkChanges?.Dispose(); networkChanges = null;
         RequestAdditionalTime(30_000); stopping.Cancel();
         try { worker?.GetAwaiter().GetResult(); }
         catch (OperationCanceledException) { }
@@ -72,6 +90,7 @@ sealed class IpKeepService : ServiceBase
                 snapshot = snapshot with { Message = message };
             }
             int failures = success ? 0 : snapshot.ConsecutiveFailures + 1;
+            Volatile.Write(ref automaticChecksPaused, authenticationRejected ? 1 : 0);
             var delay = CheckSchedule.Delay(success, interval, failures, authenticationRejected);
             snapshot = snapshot with { State = success ? "Waiting" : "Needs attention", NextCheck = delay is null ? null : DateTimeOffset.Now + delay, ConsecutiveFailures = failures };
             SaveStatus();
@@ -81,7 +100,15 @@ sealed class IpKeepService : ServiceBase
             using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             // A null delay waits only for Check now or service stop, never a timer.
             if (delay is not null) wait.CancelAfter(delay.Value);
-            try { await wake.Reader.ReadAsync(wait.Token); }
+            try {
+                while (true) {
+                    await wake.Reader.ReadAsync(wait.Token);
+                    var manual = Interlocked.Exchange(ref manualCheckRequested, 0) == 1;
+                    if (!manual && Volatile.Read(ref automaticChecksPaused) != 0) continue;
+                    if (!manual) log.Write("INFO", "Local network changed. Checking after the 10-second quiet period.");
+                    break;
+                }
+            }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
         }
     }

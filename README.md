@@ -12,6 +12,12 @@ This repository contains the Windows client and service. An **unsigned beta inst
 
 *Illustrative preview with fictional account, address, and activity data; it is not a live account capture.* [Settings preview](docs/images/settings.png) · [Activity preview](docs/images/activity.png)
 
+## Preview 6 changes (prepared locally; not yet published)
+
+The service wakes its existing single-check queue after local network-address changes or restored connectivity, following a 10-second quiet period. Bursts are coalesced; stopped services stay stopped, and rejected credentials still require a replacement token or manual check. Periodic discovery remains necessary: a router's public WAN address can change without a local interface event.
+
+The API can now restrict tokens to selected hostnames. Existing tokens keep all-host access; the Windows selector naturally shows only enabled, permitted hosts. Deleting and recreating a hostname does not restore a selected token's old permission. The Windows app continues to use only Bearer-authenticated hostname listing and JSON updates.
+
 ## Features
 
 - Token-based setup with automatic selection for one hostname, or a checkbox dropdown for up to five hostnames.
@@ -142,7 +148,7 @@ Building never installs, starts, or stops a service and does not send production
 
 ## Validation and remaining release checks
 
-The current source has 69 isolated tests. These cover HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
+The current source has 70 isolated tests. These cover HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
 
 The GitHub Windows build compiles the installer using [Inno Setup](https://jrsoftware.org/isinfo.php) and runs `tests/IPKeep.InstallerTests` on a disposable administrator runner. That suite exercises fresh setup, shortcuts, Installed Apps registration, running/paused/disabled service upgrades, a blocked service update and repair, downgrade/path refusal, uninstall, reinstall, and retention of settings/connection/activity files. Its deliberately invalid encrypted connection cannot authorize DNS updates. The suite refuses to run on a normal workstation or one with existing IPKeep files/data. Installer logs are retained as a separate build artifact.
 

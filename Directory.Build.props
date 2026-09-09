@@ -4,8 +4,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Version>1.0.0-preview.5</Version>
-    <FileVersion>1.0.0.5</FileVersion>
+    <Version>1.0.0-preview.6</Version>
+    <FileVersion>1.0.0.6</FileVersion>
     <Company>IPKeep</Company>
     <Product>IPKeep</Product>
     <Deterministic>true</Deterministic>
