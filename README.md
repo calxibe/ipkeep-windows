@@ -2,7 +2,7 @@
 
 A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose up to five existing hostnames, and let the service check your public IP in the background.
 
-**Version 1.0.0 Preview 5** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
+**Version 1.0.0 Preview 6** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
 [Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
 
@@ -12,7 +12,7 @@ This repository contains the Windows client and service. An **unsigned beta inst
 
 *Illustrative preview with fictional account, address, and activity data; it is not a live account capture.* [Settings preview](docs/images/settings.png) · [Activity preview](docs/images/activity.png)
 
-## Preview 6 changes (prepared locally; not yet published)
+## Preview 6 changes
 
 The service wakes its existing single-check queue after local network-address changes or restored connectivity, following a 10-second quiet period. Bursts are coalesced; stopped services stay stopped, and rejected credentials still require a replacement token or manual check. Periodic discovery remains necessary: a router's public WAN address can change without a local interface event.
 
@@ -33,7 +33,7 @@ The API can now restrict tokens to selected hostnames. Existing tokens keep all-
 
 Settings presents two clear steps: install the background service and connect your account with a verified token.
 
-1. Download `IPKeep-1.0.0-preview.5-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
+1. Download `IPKeep-1.0.0-preview.6-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
 2. Open `IPKeep.exe`. Viewing status/activity and verifying your own token do not require administrator access.
 3. Open **Settings**. The **1. Background service** card shows whether the service is installed. Choose **Allow changes to install service** (or **Allow changes** above) and approve the Windows administrator prompt; the elevated app returns to Settings. Choose **Install service** in the card. This step is available before adding a token; installing alone does not start DNS updates.
 4. Create your hostname and an API token at [admin.ipkeep.net](https://admin.ipkeep.net/). Hostnames can only be created and managed in that admin panel.

@@ -1,4 +1,2 @@
-- Adds clear service-installation and account-connection steps in Settings.
-- Shows whether the background service is installed and the token is verified.
-- Shows Allow changes only in Settings and adds a yellow glow to the button when a field or dropdown is used before elevation, without scrolling.
-- Labels the final action Install service and enable updates when the service is missing.
+- Checks for IP changes after a local network address changes or connectivity returns.
+- Combines network-event bursts into one check after a 10-second quiet period.
