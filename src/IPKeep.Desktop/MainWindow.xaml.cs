@@ -44,6 +44,7 @@ public sealed partial class MainWindow : Window
         AppUpdateCheckHint.Text = "Checks when you open the app and every six hours while it is open. "
             + (AppUpdateClient.CurrentVersion.IsPreview ? "This preview checks for newer preview and stable releases." : "Checks stable releases only.");
         AppUpdateBanner.CloseButtonClick += (_, _) => dismissedAppVersion = availableAppRelease?.Version.Text;
+        InitializeAppDownloads();
         AppWindow.Resize(new SizeInt32(1100, 850));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "IPKeep.ico"));
         InitializeTheme();
@@ -86,9 +87,10 @@ public sealed partial class MainWindow : Window
 
     private async Task CheckAppUpdatesAsync()
     {
-        if (windowClosed || checkingAppUpdates) return;
+        if (windowClosed || checkingAppUpdates || downloadingInstaller || launchingInstaller) return;
         checkingAppUpdates = true;
         CheckAppUpdatesButton.IsEnabled = false;
+        InstallAppUpdateButton.IsEnabled = false;
         AppUpdateStatus.Text = "Checking for updates…";
         try
         {
@@ -97,6 +99,11 @@ public sealed partial class MainWindow : Window
             if (windowClosed) return;
             // Keep an already offered release during an outage; a complete check can withdraw it.
             availableAppRelease = result.NewRelease ?? (result.CheckIncomplete ? availableAppRelease : null);
+            if (downloadedInstaller?.Version.Text != availableAppRelease?.Version.Text)
+            {
+                downloadedInstaller = null;
+                InstallerDownloadStatus.Text = "";
+            }
             AvailableAppUpdate.Visibility = availableAppRelease is null ? Visibility.Collapsed : Visibility.Visible;
             if (availableAppRelease is { } release)
             {
@@ -107,7 +114,7 @@ public sealed partial class MainWindow : Window
                 AppUpdateBanner.IsOpen = AppUpdatesPage.Visibility != Visibility.Visible && dismissedAppVersion != release.Version.Text;
                 AppUpdateStatus.Text = result.CheckIncomplete
                     ? "A newer version was found. Some release information could not be refreshed; try again later."
-                    : "A newer version is ready to download.";
+                    : "A newer version is available.";
             }
             else
             {
@@ -118,12 +125,19 @@ public sealed partial class MainWindow : Window
                     : "No release is currently published for this channel.";
             }
             if (!result.CheckIncomplete) AppUpdateStatus.Text += $" Last checked {DateTime.Now:g}.";
+            UpdateInstallerControls();
+            if (!result.CheckIncomplete && availableAppRelease is not null && AutomaticDownloadSwitch.IsOn && downloadedInstaller is null)
+                await DownloadInstallerAsync();
         }
         catch (OperationCanceledException) when (windowClosed) { }
         finally
         {
             checkingAppUpdates = false;
-            if (!windowClosed) CheckAppUpdatesButton.IsEnabled = true;
+            if (!windowClosed)
+            {
+                CheckAppUpdatesButton.IsEnabled = true;
+                UpdateInstallerControls();
+            }
         }
     }
 

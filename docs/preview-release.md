@@ -1,2 +1,3 @@
-- Checks for IP changes after a local network address changes or connectivity returns.
-- Combines network-event bursts into one check after a 10-second quiet period.
+- Downloads app updates automatically, with progress, cancellation, and a notifications-only option.
+- Verifies installer checksums and adds an Install update button with Windows approval.
+- Uses explicit stable and preview update feeds.

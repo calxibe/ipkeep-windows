@@ -781,12 +781,213 @@ AsyncTest("Window cancellation aborts app update checks; timeouts become retryab
     Assert((await new AppUpdateClient(timedOut).CheckAsync(ReleaseVersion.Parse("1.0.0"), default)).CheckIncomplete);
 });
 
+string UpdateTestDirectory() => Path.Combine(Path.GetTempPath(), "IPKeep-download-tests-" + Guid.NewGuid().ToString("N"));
+var downloadVersion = ReleaseVersion.Parse("9.0.0-preview.1");
+byte[] installerBytes = Encoding.ASCII.GetBytes("A fake installer for isolated tests; never executed.");
+string InstallerHash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
+HttpResponseMessage DownloadBytes(byte[] bytes) => new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+HttpResponseMessage Sums(byte[] bytes) => DownloadBytes(Encoding.ASCII.GetBytes(InstallerHash(bytes) + "  " + AppInstallerDownload.InstallerName(downloadVersion) + "\r\n"));
+
+Test("Installer downloads allow only HTTPS project assets and the GitHub release CDN", () =>
+{
+    Assert(AppUpdateClient.StableEndpoint.Query == "?channel=stable");
+    foreach (string url in new[] { "https://github.com/calxibe/ipkeep-windows/releases/download/v1.0.0-preview.6/a.exe", "https://release-assets.githubusercontent.com/asset?signature=public" })
+        Assert(AppInstallerDownload.AllowedDownloadUrl(new Uri(url)));
+    foreach (string url in new[] { "http://github.com/calxibe/ipkeep-windows/releases/download/v1/x", "https://github.com/other/project/releases/download/v1/x", "https://github.com.evil.test/x", "https://release-assets.githubusercontent.com.evil.test/x", "https://user@release-assets.githubusercontent.com/x", "https://release-assets.githubusercontent.com:444/x", "https://release-assets.githubusercontent.com/x#fragment", "file:///C:/Windows/notepad.exe" })
+        Assert(!AppInstallerDownload.AllowedDownloadUrl(new Uri(url)), url);
+});
+
+AsyncTest("Installer download verifies SHA256, marks Internet origin, caches bytes and detects tampering", async () =>
+{
+    string directory = UpdateTestDirectory();
+    int binaries = 0;
+    try
+    {
+        using var http = new HttpClient(new FakeHttp(request =>
+        {
+            Assert(request.Headers.Authorization is null && !request.Headers.Contains("Cookie") && request.Content is null);
+            if (request.RequestUri!.AbsolutePath.EndsWith("SHA256SUMS.txt")) return Task.FromResult(Sums(installerBytes));
+            binaries++; return Task.FromResult(DownloadBytes(installerBytes));
+        }));
+        var downloader = new AppInstallerDownload(http, directory);
+        var downloaded = await downloader.DownloadAsync(downloadVersion, null, default);
+        Assert(downloaded.Sha256 == InstallerHash(installerBytes));
+        Assert(File.ReadAllBytes(downloaded.Path).SequenceEqual(installerBytes));
+        Assert(File.ReadAllText(downloaded.Path + ":Zone.Identifier").Contains("ZoneId=3"));
+        Assert((await downloader.DownloadAsync(downloadVersion, null, default)).Path == downloaded.Path && binaries == 1);
+        File.WriteAllText(downloaded.Path, "tampered");
+        await downloader.DownloadAsync(downloadVersion, null, default);
+        Assert(binaries == 2 && File.ReadAllBytes(downloaded.Path).SequenceEqual(installerBytes));
+        Assert(!Directory.EnumerateFiles(directory, "*.partial").Any());
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+});
+
+AsyncTest("Wrong, missing, duplicate and oversized checksum files cannot authorize an installer", async () =>
+{
+    string valid = InstallerHash(installerBytes) + "  " + AppInstallerDownload.InstallerName(downloadVersion) + "\n";
+    foreach (string sums in new[] { "", "<html>Error</html>", valid.Replace("unsigned-setup.exe", "other.exe"), valid + valid, new string('x', 17000) })
+    {
+        string directory = UpdateTestDirectory(); int binaries = 0;
+        using var http = new HttpClient(new FakeHttp(request =>
+        {
+            if (!request.RequestUri!.AbsolutePath.EndsWith("SHA256SUMS.txt")) binaries++;
+            return Task.FromResult(DownloadBytes(Encoding.ASCII.GetBytes(sums)));
+        }));
+        try { await new AppInstallerDownload(http, directory).DownloadAsync(downloadVersion, null, default); throw new Exception("Invalid checksum was accepted"); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or HttpRequestException) { }
+        Assert(binaries == 0 && !Directory.Exists(directory));
+    }
+});
+
+AsyncTest("Corrupt, empty, oversized and truncated installer downloads leave no executable or partial file", async () =>
+{
+    foreach (int scenario in Enumerable.Range(0, 4))
+    {
+        string directory = UpdateTestDirectory();
+        try
+        {
+            using var http = new HttpClient(new FakeHttp(request =>
+            {
+                if (request.RequestUri!.AbsolutePath.EndsWith("SHA256SUMS.txt")) return Task.FromResult(Sums(installerBytes));
+                var response = DownloadBytes(scenario == 1 ? [] : scenario == 0 ? Encoding.ASCII.GetBytes("wrong bytes") : installerBytes);
+                if (scenario == 2) response.Content.Headers.ContentLength = AppInstallerDownload.MaximumInstallerBytes + 1;
+                if (scenario == 3) response.Content.Headers.ContentLength = installerBytes.Length + 1;
+                return Task.FromResult(response);
+            }));
+            await ThrowsAsync<InvalidDataException>(() => new AppInstallerDownload(http, directory).DownloadAsync(downloadVersion, null, default));
+            Assert(!Directory.EnumerateFiles(directory).Any());
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+});
+
+AsyncTest("Download redirects are bounded and cannot leave the trusted GitHub locations", async () =>
+{
+    foreach (string destination in new[] { "https://example.invalid/payload.exe", "http://release-assets.githubusercontent.com/payload", "https://github.com/other/repo/releases/download/x/y", "https://release-assets.githubusercontent.com/loop" })
+    {
+        int requests = 0; string directory = UpdateTestDirectory();
+        using var http = new HttpClient(new FakeHttp(request =>
+        {
+            requests++;
+            var response = new HttpResponseMessage(HttpStatusCode.Redirect);
+            response.Headers.Location = new Uri(destination);
+            return Task.FromResult(response);
+        }));
+        await ThrowsAsync<InvalidDataException>(() => new AppInstallerDownload(http, directory).DownloadAsync(downloadVersion, null, default));
+        Assert(requests <= 4 && !Directory.Exists(directory));
+    }
+});
+
+AsyncTest("A valid GitHub CDN redirect downloads anonymously", async () =>
+{
+    string directory = UpdateTestDirectory();
+    try
+    {
+        using var http = new HttpClient(new FakeHttp(request =>
+        {
+            Assert(request.Headers.Authorization is null && !request.Headers.Contains("Cookie"));
+            if (request.RequestUri!.AbsolutePath.EndsWith("SHA256SUMS.txt")) return Task.FromResult(Sums(installerBytes));
+            if (request.RequestUri.Host == "release-assets.githubusercontent.com") return Task.FromResult(DownloadBytes(installerBytes));
+            var response = new HttpResponseMessage(HttpStatusCode.Redirect);
+            response.Headers.Location = new Uri("https://release-assets.githubusercontent.com/fixture");
+            return Task.FromResult(response);
+        }));
+        Assert((await new AppInstallerDownload(http, directory).DownloadAsync(downloadVersion, null, default)).Sha256 == InstallerHash(installerBytes));
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+});
+
+AsyncTest("HTTP failures and non-file success responses never create an installer", async () =>
+{
+    foreach (var status in new[] { HttpStatusCode.NoContent, HttpStatusCode.PartialContent, HttpStatusCode.NotFound, HttpStatusCode.Forbidden, HttpStatusCode.InternalServerError })
+    {
+        string directory = UpdateTestDirectory(); int requests = 0;
+        using var http = new HttpClient(new FakeHttp(_ => { requests++; return Task.FromResult(new HttpResponseMessage(status)); }));
+        await ThrowsAsync<HttpRequestException>(() => new AppInstallerDownload(http, directory).DownloadAsync(downloadVersion, null, default));
+        Assert(requests == 1 && !Directory.Exists(directory));
+    }
+});
+
+AsyncTest("Cancelled downloads do not produce an installer", async () =>
+{
+    string directory = UpdateTestDirectory(); using var cancellation = new CancellationTokenSource();
+    try
+    {
+        using var http = new HttpClient(new FakeHttp(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("SHA256SUMS.txt")) return Task.FromResult(Sums(installerBytes));
+            cancellation.Cancel(); throw new OperationCanceledException(cancellation.Token);
+        }));
+        await ThrowsAsync<OperationCanceledException>(() => new AppInstallerDownload(http, directory).DownloadAsync(downloadVersion, null, cancellation.Token));
+        Assert(!Directory.EnumerateFiles(directory).Any());
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+});
+
+AsyncTest("Install launch checks the path, version and hash again, and uses interactive setup without reboot", async () =>
+{
+    string directory = UpdateTestDirectory(); int launches = 0;
+    try
+    {
+        using var http = new HttpClient(new FakeHttp(request => Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("SHA256SUMS.txt") ? Sums(installerBytes) : DownloadBytes(installerBytes))));
+        var downloader = new AppInstallerDownload(http, directory);
+        var installer = await downloader.DownloadAsync(downloadVersion, null, default);
+        void Start(System.Diagnostics.ProcessStartInfo info)
+        {
+            launches++;
+            Assert(info.FileName == installer.Path && info.UseShellExecute && info.Verb == "open");
+            Assert(info.Arguments == "/NORESTART /CLOSEAPPLICATIONS");
+            Throws<IOException>(() => File.WriteAllText(installer.Path, "cannot replace during launch"));
+        }
+        await downloader.LaunchAsync(installer, default, Start);
+        Assert(launches == 1);
+        await ThrowsAsync<InvalidDataException>(() => downloader.LaunchAsync(installer with { Path = Path.Combine(directory, "outside.exe") }, default, Start));
+        await ThrowsAsync<InvalidDataException>(() => downloader.LaunchAsync(installer with { Sha256 = new string('0', 64) }, default, Start));
+        var old = installer with { Version = ReleaseVersion.Parse("0.0.0"), Path = Path.Combine(directory, AppInstallerDownload.InstallerName(ReleaseVersion.Parse("0.0.0"))) };
+        await ThrowsAsync<InvalidDataException>(() => downloader.LaunchAsync(old, default, Start));
+        File.WriteAllText(installer.Path, "tampered after download");
+        await ThrowsAsync<InvalidDataException>(() => downloader.LaunchAsync(installer, default, Start));
+        Assert(launches == 1);
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+});
+
+Test("Automatic download preference persists per user without service settings", () =>
+{
+    string directory = UpdateTestDirectory();
+    try
+    {
+        using var http = new HttpClient(); var downloader = new AppInstallerDownload(http, directory);
+        Assert(downloader.AutomaticallyDownload);
+        downloader.AutomaticallyDownload = false;
+        Assert(!new AppInstallerDownload(http, directory).AutomaticallyDownload);
+        downloader.AutomaticallyDownload = true;
+        Assert(new AppInstallerDownload(http, directory).AutomaticallyDownload);
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+});
+
 if (args.Contains("--live-version")) AsyncTest("Live anonymous release metadata accepts preview and empty stable channels", async () =>
 {
     using var http = AppUpdateClient.CreateHttpClient();
     var result = await new AppUpdateClient(http).CheckAsync(ReleaseVersion.Parse("0.0.0-preview.1"), default);
     Assert(!result.CheckIncomplete && result.HasPublishedRelease && result.NewRelease is not null);
     Console.WriteLine("  Latest release: " + result.NewRelease!.Version.Text);
+});
+
+if (args.Contains("--live-installer")) AsyncTest("Live published Preview 6 installer downloads and verifies without executing", async () =>
+{
+    string directory = UpdateTestDirectory();
+    try
+    {
+        using var http = AppInstallerDownload.CreateHttpClient();
+        var installer = await new AppInstallerDownload(http, directory).DownloadAsync(ReleaseVersion.Parse("1.0.0-preview.6"), null, default);
+        Assert(installer.Sha256 == "fd4ab8233b9537e84f4b099bb6ee028da31dd51faa4ab8765d34beaf2609f2c7");
+        Assert(new FileInfo(installer.Path).Length == 93606547);
+        Console.WriteLine("  Verified published Preview 6 installer (not executed).");
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
 });
 
 if (args.Contains("--live-ipv4")) AsyncTest("Live anonymous IPv4 discovery from IPKeep over HTTPS", async () =>

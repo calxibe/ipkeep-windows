@@ -2,15 +2,21 @@
 
 A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose up to five existing hostnames, and let the service check your public IP in the background.
 
-**Version 1.0.0 Preview 6** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
+**Version 1.0.0 Preview 7** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
 [Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
 
-This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. A signed installer, automatic application updates, and Microsoft Store distribution are not available yet. Background DNS updates are already supported.
+This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. This release adds automatic update downloads with user-approved installation. A signed installer and Microsoft Store distribution are not available yet. Preview 6 and earlier support update notifications and manual downloads; install Preview 7 once to receive automatic downloads for future releases.
 
 ![IPKeep Overview with fictional example addresses](docs/images/overview.png)
 
 *Illustrative preview with fictional account, address, and activity data; it is not a live account capture.* [Settings preview](docs/images/settings.png) · [Activity preview](docs/images/activity.png)
+
+## Preview 7 changes
+
+- Downloads newer installers automatically, with progress, cancellation, and an option to receive notifications only.
+- Verifies the published SHA-256 checksum before offering **Install update**, then checks the file again before opening Windows setup.
+- Uses explicit release channels while the public default version feed offers the available preview until a stable release is published.
 
 ## Preview 6 changes
 
@@ -26,14 +32,14 @@ The API can now restrict tokens to selected hostnames. Existing tokens keep all-
 - IPv4 and optional IPv6 updates, depending on the selected provider.
 - Encrypted token storage using Windows DPAPI and restricted file permissions.
 - Searchable activity in a compact table with local timestamps, row hover highlights, and rotating log files.
-- Automatic app update checks, release notes, and a download link to GitHub Releases.
+- Automatic app update checks and downloads, release notes, user-approved installation, and a GitHub fallback.
 - Follows Windows light or dark mode, including changes while the window is open; light is the fallback.
 
 ## Getting started
 
 Settings presents two clear steps: install the background service and connect your account with a verified token.
 
-1. Download `IPKeep-1.0.0-preview.6-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
+1. Download `IPKeep-1.0.0-preview.7-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
 2. Open `IPKeep.exe`. Viewing status/activity and verifying your own token do not require administrator access.
 3. Open **Settings**. The **1. Background service** card shows whether the service is installed. Choose **Allow changes to install service** (or **Allow changes** above) and approve the Windows administrator prompt; the elevated app returns to Settings. Choose **Install service** in the card. This step is available before adding a token; installing alone does not start DNS updates.
 4. Create your hostname and an API token at [admin.ipkeep.net](https://admin.ipkeep.net/). Hostnames can only be created and managed in that admin panel.
@@ -43,7 +49,7 @@ Settings presents two clear steps: install the background service and connect yo
 
 This release supports Windows 10 version 2004 or later and Windows 11, x64. The build bundles .NET and the Windows App SDK, so target computers do not need to install those runtimes separately. The installer places the manager in `%ProgramFiles%/IPKeep/app`; the active service uses `%ProgramFiles%/IPKeep/service`. The ZIP remains an optional folder distribution. No Microsoft Store or MSIX registration is involved.
 
-To update an installed beta, close IPKeep and run the newer installer. Setup also detects applications holding its files open. An existing service is updated from the new bundle; running services resume and paused/disabled services retain their state. Saved settings, encrypted tokens, and activity logs are preserved. On a new computer, the installer leaves service installation to Settings. A newer installed installer version cannot be replaced by an older one. If a service update fails, setup reports it, returns exit code 20, and leaves the desktop available for repair; the service deployment attempts to restore its previous files. Application auto-update is not implemented.
+To update an installed beta, use **App updates → Install update** when available, or close IPKeep and run the newer installer from GitHub. Preview 6 and earlier need a manual upgrade to gain automatic downloads. Setup also detects applications holding its files open. An existing service is updated from the new bundle; running services resume and paused/disabled services retain their state. Saved settings, encrypted tokens, and activity logs are preserved. On a new computer, the installer leaves service installation to Settings. A newer installed installer version cannot be replaced by an older one. If a service update fails, setup reports it, returns exit code 20, and leaves the desktop available for repair; the service deployment attempts to restore its previous files.
 
 When the API returns `dnsUpdated: false`, the app reports **IP recorded. DNS publishing pending.** It only reports published DNS when the API confirms it.
 
@@ -64,11 +70,15 @@ When the API returns `dnsUpdated: false`, the app reports **IP recorded. DNS pub
 
 ## App updates
 
-The desktop checks for new application releases when it opens and every six hours while it remains open. **App updates → Check for updates** checks manually, without a token or administrator access. A newer release shows a banner on any page; **View changes** opens its version, local release date, and short notes in a read-only, scrollable text box. **Download now** opens [GitHub Releases](https://github.com/calxibe/ipkeep-windows/releases) in your default browser. Download and run the newer installer yourself; automatic downloading/installation is not implemented. Preview 2 and earlier need this first upgrade manually before they can notify you about later versions.
+The desktop checks for new application releases when it opens and every six hours while it remains open. **App updates → Check for updates** checks manually, without a token or administrator access. A newer release shows a banner on any page; **View changes** opens its version, local release date, and short notes in a read-only, scrollable text box. By default, the app downloads a newer installer automatically and verifies its checksum. Progress and **Cancel download** appear on App updates. Turn off **Download updates automatically** for notifications only; **Download update** remains available. This preference is remembered for the Windows user.
 
-Requests use the public `GET https://api.ipkeep.net/version` feed. Preview builds also check `?channel=preview` and offer the highest newer semantic version across both channels, including graduation to stable. Stable builds check only stable releases. Equal/older releases and build-metadata-only differences are not offered. Empty channels (`NO_RELEASE`) are normal; failures show retry guidance on the App updates page, never a token error or a false up-to-date result. An already found update remains available during an outage. Dismissing its banner lasts for this window; the release details remain on the App updates page. Closing the window cancels requests and stops application update checks; the DNS service keeps its independent schedule.
+**Install update** checks the file again and opens the normal unsigned Windows setup. It requires the user's click and Windows administrator approval. IPKeep closes after Windows accepts the launch; setup preserves settings and performs the existing service upgrade. Setup is interactive and cannot restart Windows automatically. Cancelling Windows approval keeps IPKeep open. **Download from GitHub instead** opens the fixed [GitHub Releases](https://github.com/calxibe/ipkeep-windows/releases) page. Preview 6 and earlier need one manual upgrade to receive these download controls.
 
-These requests send no token, hostname, cookies, or IP lookup results. Redirects are disabled, responses are limited to 16 KB, and requests time out after ten seconds. Notes are plain text, capped at 1,000 characters. The download destination is fixed in the app and cannot be changed by the feed. The API caches metadata for ten minutes, so newly published releases may take that long to appear.
+Requests use the public `GET https://api.ipkeep.net/version?channel=stable` feed. Preview builds also check `?channel=preview` and offer the highest newer semantic version across both channels, including graduation to stable. Stable builds check only stable releases. Equal/older releases and build-metadata-only differences are not offered. Empty channels (`NO_RELEASE`) are normal; failures show retry guidance on App updates, never a token error or a false up-to-date result. An already found update remains visible during an outage, but an incomplete check does not start an automatic download. Dismissing its banner lasts for this window; the release details remain on App updates. Closing the window cancels requests and stops application checks/downloads; the DNS service keeps its independent schedule.
+
+Version requests send no token, hostname, cookies, or IP lookup results. Redirects are disabled, responses are limited to 16 KB, and requests time out after ten seconds. Notes are plain text, capped at 1,000 characters. The API caches metadata for ten minutes, so newly published releases may take that long to appear.
+
+Installer downloads use the exact version's `SHA256SUMS.txt` and `IPKeep-<version>-windows-x64-unsigned-setup.exe` from this project's GitHub release. The feed cannot choose a download URL. Only HTTPS redirects within that project or to GitHub's release-asset CDN are allowed. Checksums are bounded to 16 KB and installers to 256 MB, with a 15-minute overall timeout. A mismatch or incomplete download leaves no new installer; cached files are verified before reuse and again before launch. Files and the download preference are kept in the current user's restricted `%LOCALAPPDATA%/IPKeep/Updates` folder. Downloaded installers retain Windows' Internet-zone marker. Checksums verify the download against the HTTPS-hosted release; they are not an Authenticode signature. Windows may still show unknown-publisher or SmartScreen warnings. No silent installation or security-warning bypass is implemented.
 
 `Directory.Build.props` supplies the complete release `Version` (including `-preview.N`) to the compiled desktop/service, metadata, ZIP, and installer. `FileVersion` supplies the installer's monotonically increasing four-part Windows version. Increment both for each preview; a final stable installer must also have a higher Windows file version than the last preview. Packaging checks the compiled assemblies against the declared release version and rejects a mismatched Git tag.
 
@@ -142,13 +152,15 @@ dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live
 dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live-providers
 # Optional: also check the anonymous release feeds live:
 dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live-version
+# Optional: download/checksum the published Preview 6 installer without running it:
+dotnet run --project tests/IPKeep.Tests/IPKeep.Tests.csproj -c Release -- --live-installer
 ```
 
 Building never installs, starts, or stops a service and does not send production updates. Tests cover request destination/authentication, hostname-list parsing, empty/invalid lists, token-bound selection and stale-load rejection, provider persistence/defaults and routing of update addresses, independent concurrent probes and stale-result cancellation, response validation/redaction, error handling, IPKeep JSON and plain-text discovery, separate IPv4/IPv6 transports (including real loopback sockets), hostname/CIDR validation, partial failures, IPv6 omission, ignored networks, cancellation, non-overlapping checks, retry decisions, log retention, atomic saves, Windows encryption, and the workspace runtime guard. Default tests use fake responses and local loopback connections; only the explicit `--live-ipv4` / `--live-providers` options contact public discovery endpoints.
 
 ## Validation and remaining release checks
 
-The current source has 70 isolated tests. These cover HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
+The current source has 80 isolated tests. New tests cover installer checksum failures, corruption/truncation, size limits, trusted redirects, cache reuse/tampering, Internet-zone marking, cancellation, launch validation and per-user preferences. The launch test substitutes a callback and never executes the fixture bytes. The suite also covers HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
 
 The GitHub Windows build compiles the installer using [Inno Setup](https://jrsoftware.org/isinfo.php) and runs `tests/IPKeep.InstallerTests` on a disposable administrator runner. That suite exercises fresh setup, shortcuts, Installed Apps registration, running/paused/disabled service upgrades, a blocked service update and repair, downgrade/path refusal, uninstall, reinstall, and retention of settings/connection/activity files. Its deliberately invalid encrypted connection cannot authorize DNS updates. The suite refuses to run on a normal workstation or one with existing IPKeep files/data. Installer logs are retained as a separate build artifact.
 

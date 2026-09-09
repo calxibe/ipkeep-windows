@@ -59,7 +59,7 @@ public sealed record AppUpdateResult(AppRelease? NewRelease, bool HasPublishedRe
 
 public sealed class AppUpdateClient(HttpClient http)
 {
-    public static readonly Uri StableEndpoint = new("https://api.ipkeep.net/version");
+    public static readonly Uri StableEndpoint = new("https://api.ipkeep.net/version?channel=stable");
     public static readonly Uri PreviewEndpoint = new("https://api.ipkeep.net/version?channel=preview");
     public static readonly Uri ReleasesPage = new("https://github.com/calxibe/ipkeep-windows/releases");
     public static readonly TimeSpan CheckInterval = TimeSpan.FromHours(6);

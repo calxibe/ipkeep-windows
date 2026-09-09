@@ -8,7 +8,9 @@ Opening Overview looks up the public IP address using the selected provider, eve
 
 IP lookups send anonymous HTTPS requests. The destination can see the connection's public IP address and ordinary HTTP metadata, including the `IPKeep-Windows/1.0` user-agent. The client sends no account token, hostname, or update payload to external lookup providers.
 
-The desktop also checks `https://api.ipkeep.net/version` for application releases at startup and every six hours while open, or when you choose **Check for updates**. Preview builds additionally query `?channel=preview`. These anonymous requests include the app version in the user-agent; they send no token, hostname, cookies, or discovered IP addresses. The server can see the connection's public IP and ordinary HTTP metadata. Closing the desktop stops these checks. **Download now** opens the fixed GitHub Releases page in your browser; the app does not automatically download or install packages.
+The desktop checks `https://api.ipkeep.net/version?channel=stable` for application releases at startup and every six hours while open, or when you choose **Check for updates**. Preview builds additionally query `?channel=preview`. These anonymous requests include the app version in the user-agent; they send no token, hostname, cookies, or discovered IP addresses. The server can see the connection's public IP and ordinary HTTP metadata. Closing the desktop stops these checks.
+
+Starting with Preview 7, newer installers are downloaded automatically while the desktop is open unless **Download updates automatically** is turned off. Downloads request the version's checksum file and installer from `github.com/calxibe/ipkeep-windows`; GitHub can redirect to `release-assets.githubusercontent.com`. These HTTPS requests include the application version and ordinary HTTP metadata, but no IPKeep token, hostname, cookies, or discovered IP addresses. GitHub sees the connection's public IP. Installation starts only when the user chooses **Install update** and accepts Windows setup. **Download from GitHub instead** opens the fixed GitHub Releases page in the browser.
 
 When the user verifies a token or opens Settings with a remembered token, the client sends that token to `https://api.ipkeep.net/hosts` to retrieve the account's active hostnames. After the user saves and enables updates, the background service sends the token, selected hostname, and eligible public addresses to `https://api.ipkeep.net/update`. These are the only authenticated operations. Tokens are sent in the Authorization header over HTTPS, never in URLs.
 
@@ -26,6 +28,8 @@ Provider privacy information:
 The desktop remembers a token using Windows DPAPI CurrentUser in `%LOCALAPPDATA%/IPKeep/Private/token.bin`. The service's separate connection is encrypted with DPAPI LocalMachine under `%ProgramData%/IPKeep/Private`, with restricted filesystem permissions. Tokens are decrypted in memory when used. The password field masks the restored value.
 
 Public settings, status, and activity logs contain hostnames and IP addresses. Logs also contain timestamps, provider names, HTTP status codes, timing information, and service events. Tokens and HTTP response bodies are not intentionally logged. Logs remain on the computer unless the user shares them, rotate around 2 MB, and retain five archives.
+
+Verified installers and the automatic-download preference are stored in `%LOCALAPPDATA%/IPKeep/Updates`, restricted to the current Windows user and SYSTEM. These files contain no account token. Uninstalling retains this folder; deleting `%LOCALAPPDATA%/IPKeep` also removes it.
 
 ## Removal and contact
 

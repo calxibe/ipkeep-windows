@@ -47,11 +47,18 @@
                         <TextBlock x:Name="AvailableVersionText" Style="{StaticResource SectionTitle}" TextWrapping="Wrap" />
                         <TextBlock x:Name="AppReleaseDateText" Foreground="{ThemeResource Muted}" />
                         <TextBox x:Name="AppReleaseNotes" Header="What's changed" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="112" MaxHeight="240" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Release notes" />
-                        <Button Content="Download now" Click="DownloadAppUpdate_Click" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Left" Padding="20,10" />
-                        <TextBlock Text="Opens GitHub Releases in your browser. Download and run the newer installer to update IPKeep." TextWrapping="Wrap" Foreground="{ThemeResource Muted}" FontSize="12" />
+                        <TextBlock x:Name="InstallerDownloadStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        <ProgressBar x:Name="InstallerDownloadProgress" Visibility="Collapsed" Minimum="0" Maximum="100" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="InstallAppUpdateButton" Content="Download update" Click="InstallAppUpdate_Click" Style="{StaticResource AccentButtonStyle}" Padding="20,10" />
+                            <Button x:Name="CancelAppDownloadButton" Content="Cancel download" Click="CancelAppDownload_Click" Visibility="Collapsed" />
+                        </StackPanel>
+                        <HyperlinkButton Content="Download from GitHub instead ↗" Click="DownloadAppUpdate_Click" HorizontalAlignment="Left" />
+                        <TextBlock Text="This beta is unsigned. Install update opens Windows setup and closes IPKeep after approval. Your saved settings and service connection are kept." TextWrapping="Wrap" Foreground="{ThemeResource Muted}" FontSize="12" />
                     </StackPanel></Border>
                     <Border Style="{StaticResource Card}"><StackPanel Spacing="14">
                         <TextBlock x:Name="InstalledVersionText" FontWeight="SemiBold" />
+                        <ToggleSwitch x:Name="AutomaticDownloadSwitch" Header="Download updates automatically" OnContent="On — ask before installing" OffContent="Off — notify only" Toggled="AutomaticDownload_Toggled" />
                         <TextBlock x:Name="AppUpdateStatus" Text="Checking for updates…" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                         <Button x:Name="CheckAppUpdatesButton" Content="Check for updates" Click="CheckAppUpdates_Click" />
                         <TextBlock x:Name="AppUpdateCheckHint" TextWrapping="Wrap" Foreground="{ThemeResource Muted}" FontSize="12" />
