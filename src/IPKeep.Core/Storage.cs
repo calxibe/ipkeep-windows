@@ -147,17 +147,35 @@ public static class DeploymentSecurity
     public static void ValidateFile(string path, bool secret = false, bool runtime = false)
     {
         RejectLinks(path);
-        FileSystemSecurity acl = Directory.Exists(path) ? new DirectoryInfo(path).GetAccessControl() : new FileInfo(path).GetAccessControl();
+        try
+        {
+            FileSystemSecurity acl = Directory.Exists(path) ? new DirectoryInfo(path).GetAccessControl() : new FileInfo(path).GetAccessControl();
+            ValidatePermissions(acl, secret, runtime);
+        }
+        catch (UnauthorizedAccessException ex) when (ex is not InstallationPermissionException)
+        {
+            throw new InstallationPermissionException(secret, secret
+                ? "Windows denied access to the saved connection's permissions. Open Settings to repair the connection."
+                : "Windows denied access to IPKeep's installation permissions. Open Settings to repair the service.", ex);
+        }
+    }
+
+    internal static void ValidatePermissions(FileSystemSecurity acl, bool secret = false, bool runtime = false)
+    {
         var owner = acl.GetOwner(typeof(SecurityIdentifier));
         if (!Equals(owner, Admin) && !Equals(owner, SystemSid) && !(runtime && Equals(owner, ServiceSid)))
-            throw new UnauthorizedAccessException("IPKeep files have an unexpected owner. Reinstall IPKeep to repair permissions.");
+            throw new InstallationPermissionException(secret, secret
+                ? "The saved connection has an unexpected Windows owner. Open Settings to repair the connection."
+                : "IPKeep's installation has an unexpected Windows owner. Open Settings to repair the service.");
         foreach (FileSystemAccessRule rule in acl.GetAccessRules(true, true, typeof(SecurityIdentifier)))
         {
             if (rule.AccessControlType != AccessControlType.Allow || Equals(rule.IdentityReference, Admin) || Equals(rule.IdentityReference, SystemSid)) continue;
             if (Equals(rule.IdentityReference, ServiceSid) && runtime) continue;
             if ((rule.FileSystemRights & WriteRights) != 0 || ((int)rule.FileSystemRights & unchecked((int)0x50000000)) != 0 ||
                 (secret && !Equals(rule.IdentityReference, ServiceSid) && (rule.FileSystemRights & FileSystemRights.ReadData) != 0))
-                throw new UnauthorizedAccessException("IPKeep files have unsafe permissions. Reinstall IPKeep to repair permissions.");
+                throw new InstallationPermissionException(secret, secret
+                    ? "Windows permissions allow another account to access or change the saved connection. Open Settings to restore its private permissions."
+                    : "Windows permissions allow another account to change IPKeep's installation. Open Settings to repair the service.");
         }
     }
 
@@ -190,6 +208,20 @@ public sealed record ServiceSnapshot
     public CheckResult? LastCheck { get; init; }
     public int ConsecutiveFailures { get; init; }
     public string Message { get; init; } = "Set up your IPKeep connection to get started.";
+    public string? ProblemCode { get; init; }
+    public bool LastAttemptFailed { get; init; }
+
+    public ServiceSnapshot Failed(Exception error) => this with
+    {
+        State = "Needs attention", Message = ServiceRecovery.FailureMessage(error),
+        ProblemCode = ServiceRecovery.ProblemCodeFor(error), LastAttemptFailed = true
+    };
+
+    public ServiceSnapshot Completed(CheckResult result) => this with
+    {
+        State = result.Success ? "Waiting" : "Needs attention",
+        LastCheck = result, Message = result.Message, ProblemCode = null, LastAttemptFailed = false
+    };
 }
 
 public sealed class ActivityLog(string path, long maximumBytes = 2 * 1024 * 1024) : IActivityLog

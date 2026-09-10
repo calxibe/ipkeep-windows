@@ -9,6 +9,7 @@ public sealed partial class MainWindow
     private void UpdateSetupState()
     {
         bool installed = serviceStatus is not null;
+        bool needsRepair = installed && ServiceRecovery.For(cachedSnapshot) is not null;
         bool verified = hostSelection.IsConnected;
         ConnectionTitle.Text = installed ? "Your IPKeep connection." : "Set up this computer.";
         ConnectionSubtitle.Text = !installed
@@ -16,10 +17,10 @@ public sealed partial class MainWindow
             : verified ? "Manage your hostnames and background updates."
             : "The service is installed. Verify your token to connect your hostnames.";
 
-        ServiceSetupStatus.Text = !installed ? "Not installed"
+        ServiceSetupStatus.Text = needsRepair ? "Needs repair" : !installed ? "Not installed"
             : serviceStatus == ServiceControllerStatus.Running ? "Installed and running" : "Installed · updates not running";
-        ServiceSetupDot.Style = (Style)Application.Current.Resources[installed ? "SuccessStatusDot" : "WarningStatusDot"];
-        ServiceSetupHint.Text = !installed
+        ServiceSetupDot.Style = (Style)Application.Current.Resources[installed && !needsRepair ? "SuccessStatusDot" : "WarningStatusDot"];
+        ServiceSetupHint.Text = needsRepair ? "Follow the repair steps above to restore background updates." : !installed
             ? "Install the service so IPKeep can update your hostnames even when this window is closed. Then connect your account below."
             : serviceStatus == ServiceControllerStatus.Running
                 ? "IPKeep keeps updating your hostnames when you close this window or sign out."

@@ -479,17 +479,22 @@ public sealed partial class MainWindow : Window
 
             var snapshot = cachedSnapshot;
             var settings = cachedSettings;
+            var recovery = serviceStatus is null ? null : ServiceRecovery.For(snapshot);
+            ConnectionRecoveryBanner.IsOpen = recovery is not null;
+            ConnectionRecoveryBanner.Title = recovery?.Title ?? "";
+            ConnectionRecoveryBanner.Message = recovery?.InstructionsFor(DeploymentSecurity.IsAdministrator) ?? "";
+            UpdateSetupState();
             bool running = serviceStatus == ServiceControllerStatus.Running;
             bool configured = settings?.Hostnames.Length > 0;
             StatusLabel.Text = serviceStatus is null ? "Not installed" : running ? (snapshot.State == "Checking" ? "Checking now" : "Background service running") : "Updates paused";
             bool pendingDns = snapshot.LastCheck?.Hosts.Any(x => x.Success && !x.DnsUpdated) == true;
             bool attention = snapshot.State == "Needs attention";
             bool fullySkipped = snapshot.LastCheck is { Skipped: true, Hosts.Length: 0 };
-            StatusTitle.Text = !configured ? "Keep your connections current." : !running ? "Ready when you are." : attention ? "Your connection needs attention." : fullySkipped ? "Update skipped on this network." : pendingDns ? "IP recorded. DNS publishing pending." : snapshot.LastCheck?.Success == true ? "Your connection is up to date." : "Getting your connection ready.";
-            StatusMessage.Text = !configured ? "Add your IPKeep API token in Settings to connect your hostnames." : !running ? "Enable updates to keep these hostnames current in the background." : snapshot.Message;
-            StatusDot.Style = (Style)Application.Current.Resources[!running || fullySkipped ? "NeutralStatusDot" : attention || pendingDns ? "WarningStatusDot" : "SuccessStatusDot"];
-            PrimaryAction.Content = !configured ? "Set up IPKeep" : running ? "Check now" : "Enable updates";
-            PrimaryAction.IsEnabled = !busy && (!running || DeploymentSecurity.IsAdministrator) && snapshot.State != "Checking";
+            StatusTitle.Text = recovery?.Title ?? (!configured ? "Keep your connections current." : !running ? "Ready when you are." : attention ? "Your connection needs attention." : fullySkipped ? "Update skipped on this network." : pendingDns ? "IP recorded. DNS publishing pending." : snapshot.LastCheck?.Success == true ? "Your connection is up to date." : "Getting your connection ready.");
+            StatusMessage.Text = recovery is not null ? snapshot.Message + " Choose Fix in Settings for repair steps." : !configured ? "Add your IPKeep API token in Settings to connect your hostnames." : !running ? "Enable updates to keep these hostnames current in the background." : snapshot.Message;
+            StatusDot.Style = (Style)Application.Current.Resources[recovery is not null ? "WarningStatusDot" : !running || fullySkipped ? "NeutralStatusDot" : attention || pendingDns ? "WarningStatusDot" : "SuccessStatusDot"];
+            PrimaryAction.Content = recovery is not null ? "Fix in Settings" : !configured ? "Set up IPKeep" : running ? "Check now" : "Enable updates";
+            PrimaryAction.IsEnabled = !busy && (recovery is not null || ((!running || DeploymentSecurity.IsAdministrator) && snapshot.State != "Checking"));
             // A stale saved Checking state must not disable setup after a crash/stop.
             if (!running) PrimaryAction.IsEnabled = !busy;
             PauseButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
@@ -498,7 +503,7 @@ public sealed partial class MainWindow : Window
             NextCheckText.Text = running ? snapshot.State == "Checking" ? "In progress" : FormatTime(snapshot.NextCheck) : "—";
             var rows = settings?.Hostnames.Select(name => new HostStatusRow(
                 name,
-                snapshot.LastCheck?.Hosts.FirstOrDefault(h => h.Hostname == name)?.Message ?? "Waiting for its first update."
+                ServiceRecovery.HostMessage(snapshot, name)
             )).ToArray() ?? [];
             // Records compare by value, so an unchanged list leaves the ItemsControl alone
             // instead of rebuilding every container.
@@ -555,7 +560,8 @@ public sealed partial class MainWindow : Window
                 TokenHint.Text = "Your token is saved. Choose Load my hostnames to restore it, or paste your token here.";
             if (ex is UpdateException { AuthenticationFailure: true })
             { hostSelection.Reset(); ClearHostnameChoices(); }
-            string message = ex is SettingsException or UpdateException ? ex.Message : ex is Win32Exception { NativeErrorCode: 1223 }
+            string message = ex is InstallationPermissionException permission ? permission.Message + " Follow the repair steps in Settings."
+                : ex is SettingsException or UpdateException ? ex.Message : ex is Win32Exception { NativeErrorCode: 1223 }
                 ? "Restoring the saved token was cancelled. Choose Load my hostnames to try again, or paste your token."
                 : ex is UnauthorizedAccessException ? "Choose Allow changes to manage IPKeep, or check the installation permissions." : "The action could not be completed. Check the installation files and Windows service status, then try again.";
             ShowFeedback(message, true);
@@ -594,6 +600,16 @@ public sealed partial class MainWindow : Window
 
     private async void Primary_Click(object sender, RoutedEventArgs e)
     {
+        if (busy) return;
+        if (serviceStatus is not null && ServiceRecovery.For(cachedSnapshot) is { } recovery)
+        {
+            ShowPage("settings");
+            SettingsPage.ChangeView(null, 0, null, disableAnimation: true);
+            if (recovery.RepairInstallation) ServiceMaintenanceExpander.IsExpanded = true;
+            await OpenSettingsAsync();
+            if (!windowClosed && SettingsPage.Visibility == Visibility.Visible) ShowAccessHint();
+            return;
+        }
         if (savedSettings is null || serviceStatus is null) { await OpenSettingsAsync(); return; }
         if (!DeploymentSecurity.IsAdministrator) { ShowPage("settings"); ShowFeedback("Choose Allow changes to enable or check updates."); return; }
         await RunAction(() => Task.Run(() => { if (serviceStatus == ServiceControllerStatus.Running) ServiceManager.CheckNow(); else ServiceManager.Start(); }));

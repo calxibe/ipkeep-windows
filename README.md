@@ -2,15 +2,23 @@
 
 A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose up to five existing hostnames, and let the service check your public IP in the background.
 
-**Version 1.0.0 Preview 7** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
+**Version 1.0.0 Preview 8** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
 [Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
 
-This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. This release adds automatic update downloads with user-approved installation. A signed installer and Microsoft Store distribution are not available yet. Preview 6 and earlier support update notifications and manual downloads; install Preview 7 once to receive automatic downloads for future releases.
+This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. This release adds permission warnings and guided repair. Automatic update downloads with user-approved installation are included. A signed installer and Microsoft Store distribution are not available yet. Preview 3–6 support update notifications and manual downloads; Preview 1–2 have no update checker. Install the current preview once to receive automatic downloads for future releases.
 
 ![IPKeep Overview with fictional example addresses](docs/images/overview.png)
 
 *Illustrative preview with fictional account, address, and activity data; it is not a live account capture.* [Settings preview](docs/images/settings.png) · [Activity preview](docs/images/activity.png)
+
+## Preview 8 changes
+
+- Explains saved-connection and installation permission failures and offers **Fix in Settings**, including without administrator access.
+- Shows repair steps in Settings: **Allow changes**, then **Save and enable updates** for private connection permissions, or **Repair / update service** for installation permissions. Elevated users see only the remaining steps.
+- Labels retained hostname results as earlier results after a failed check and clears the permission warning when a completed check confirms the permission problem is gone.
+
+The existing Windows approval and file-permission checks remain required. Repair guidance does not automatically change permissions or request elevation. Older service status files receive general setup guidance because they do not identify the precise cause.
 
 ## Preview 7 changes
 
@@ -39,7 +47,7 @@ The API can now restrict tokens to selected hostnames. Existing tokens keep all-
 
 Settings presents two clear steps: install the background service and connect your account with a verified token.
 
-1. Download `IPKeep-1.0.0-preview.7-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
+1. Download `IPKeep-1.0.0-preview.8-windows-x64-unsigned-setup.exe` from the preview release and run it. Windows administrator approval is required; this unsigned beta may show an unknown publisher or SmartScreen warning. Setup installs the app and its dependencies, adds a Start menu shortcut, and offers an optional desktop shortcut. Alternatively, build with `./build.ps1` or extract the complete ZIP to a permanent folder, keeping its files together.
 2. Open `IPKeep.exe`. Viewing status/activity and verifying your own token do not require administrator access.
 3. Open **Settings**. The **1. Background service** card shows whether the service is installed. Choose **Allow changes to install service** (or **Allow changes** above) and approve the Windows administrator prompt; the elevated app returns to Settings. Choose **Install service** in the card. This step is available before adding a token; installing alone does not start DNS updates.
 4. Create your hostname and an API token at [admin.ipkeep.net](https://admin.ipkeep.net/). Hostnames can only be created and managed in that admin panel.
@@ -84,7 +92,7 @@ Installer downloads use the exact version's `SHA256SUMS.txt` and `IPKeep-<versio
 
 ## Network contract
 
-Customer API tokens authorize exactly two operations: hostname listing and address updates. `GET https://api.ipkeep.net/hosts` returns `{ "hosts": [{ "hostname": "home.a.ipkeep.net" }] }` for the token owner's active hostnames, or an empty array. The client accepts only valid managed hostnames, binds the selection to the token that loaded the list, and retrieves the list again before saving. Empty, failed, or stale lists cannot enable updates.
+Customer API tokens authorize exactly two operations: hostname listing and address updates. `GET https://api.ipkeep.net/hosts` returns `{ "hosts": [{ "hostname": "home.a.ipkeep.net" }] }` for the token owner's active hostnames permitted by its scope, or an empty array. The client accepts only valid managed hostnames, binds the selection to the token that loaded the list, and retrieves the list again before saving. Empty, failed, or stale lists cannot enable updates.
 
 Updates are `POST https://api.ipkeep.net/update`, with JSON containing `hostname` and the available `ipv4` / `ipv6` fields. Both authenticated endpoints use `Authorization: Bearer <IPKeep token>`. Redirects and cookies are disabled. Their URLs are fixed; there is no editable URL that could receive the token. HTTP response bodies, authentication headers, and tokens are never logged. A 401/403 asks for a new or enabled token; a 404 asks the user to check the hostname/account/paused state.
 
@@ -125,6 +133,10 @@ The desktop separately remembers verified tokens with DPAPI **CurrentUser**, usi
 
 The service verifies its installed location and permissions before starting and before every check. It refuses workspace execution. Links/junctions in protected paths are rejected. Settings/status writes use atomic replacement. Logs rotate at approximately 2 MB, retaining the current file plus five archives. IP addresses and hostnames are intentionally present in activity logs; credentials are not.
 
+For a permission warning, choose **Fix in Settings** and follow the displayed steps. If the problem persists, run [scripts/diagnose-permissions.ps1](scripts/diagnose-permissions.ps1) in an administrator PowerShell on the affected computer. It reports the service registration and ownership/access rules for the files and directories checked during an update. It reads no token contents and changes nothing. Standard-user access to the Private folder is normally denied, so a non-elevated report cannot diagnose that folder. Preview 7 and earlier report the generic `Check failed (UnauthorizedAccessException)` message; Preview 8 distinguishes known permission failures using `InstallationPermissionException` and specific repair guidance. Do not weaken the private directory's permissions to clear the warning.
+
+If that report identifies an extra account with access to the Private folder or saved connection, open **Settings → Allow changes**, load/verify your token and selected hostnames, then **Save and enable updates**. Saving restores the private folder's intended permissions and replaces the encrypted connection before restarting the service. This repairs that specific permission problem without reinstalling the application. Check Activity for a successful fresh update afterward; other permission failures need their own diagnosis.
+
 ## Source and build
 
 - `src/IPKeep.Core`: hostname/settings validation, protected storage, HTTP clients, check orchestration, log rotation, service installation/control.
@@ -160,7 +172,7 @@ Building never installs, starts, or stops a service and does not send production
 
 ## Validation and remaining release checks
 
-The current source has 80 isolated tests. New tests cover installer checksum failures, corruption/truncation, size limits, trusted redirects, cache reuse/tampering, Internet-zone marking, cancellation, launch validation and per-user preferences. The launch test substitutes a callback and never executes the fixture bytes. The suite also covers HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
+The current source has 86 isolated tests, including permission diagnostics, access-control boundaries, safe public messages, retained hostname history and recovery. Other tests cover installer checksum failures, corruption/truncation, size limits, trusted redirects, cache reuse/tampering, Internet-zone marking, cancellation, launch validation and per-user preferences. The launch test substitutes a callback and never executes the fixture bytes. The suite also covers HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
 
 The GitHub Windows build compiles the installer using [Inno Setup](https://jrsoftware.org/isinfo.php) and runs `tests/IPKeep.InstallerTests` on a disposable administrator runner. That suite exercises fresh setup, shortcuts, Installed Apps registration, running/paused/disabled service upgrades, a blocked service update and repair, downgrade/path refusal, uninstall, reinstall, and retention of settings/connection/activity files. Its deliberately invalid encrypted connection cannot authorize DNS updates. The suite refuses to run on a normal workstation or one with existing IPKeep files/data. Installer logs are retained as a separate build artifact.
 

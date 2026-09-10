@@ -29,7 +29,14 @@ sealed class IpKeepService : ServiceBase
     public IpKeepService() { ServiceName = AppPaths.ServiceName; CanStop = true; CanShutdown = true; AutoLog = false; }
     protected override void OnStart(string[] args)
     {
-        DeploymentSecurity.ValidateRuntime();
+        try { DeploymentSecurity.ValidateRuntime(); }
+        catch (Exception ex)
+        {
+            snapshot = snapshot.Failed(ex) with { NextCheck = null };
+            SaveStatus();
+            log.Write("ERROR", $"Service startup failed ({ex.GetType().Name}). {snapshot.Message}");
+            throw;
+        }
         networkChanges = new NetworkChangeDebouncer(() => {
             if (!stopping.IsCancellationRequested && Volatile.Read(ref automaticChecksPaused) == 0) wake.Writer.TryWrite(false);
         });
@@ -80,14 +87,13 @@ sealed class IpKeepService : ServiceBase
                 var result = await engine.RunAsync(connection.Settings, connection.Token, cancellationToken);
                 success = result.Success;
                 authenticationRejected = result.AuthenticationRejected;
-                snapshot = snapshot with { LastCheck = result, Message = result.Message };
+                snapshot = snapshot.Completed(result);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
-                string message = ex is SettingsException ? ex.Message : "Cannot read the connection or verify the installation. Open IPKeep Settings to repair it.";
-                log.Write("ERROR", $"Check failed ({ex.GetType().Name}). {message}");
-                snapshot = snapshot with { Message = message };
+                snapshot = snapshot.Failed(ex);
+                log.Write("ERROR", $"Check failed ({ex.GetType().Name}). {snapshot.Message}");
             }
             int failures = success ? 0 : snapshot.ConsecutiveFailures + 1;
             Volatile.Write(ref automaticChecksPaused, authenticationRejected ? 1 : 0);

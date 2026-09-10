@@ -1,3 +1,3 @@
-- Downloads app updates automatically, with progress, cancellation, and a notifications-only option.
-- Verifies installer checksums and adds an Install update button with Windows approval.
-- Uses explicit stable and preview update feeds.
+- Explains connection and installation permission problems with a Fix in Settings action.
+- Shows repair steps and marks saved hostname results as earlier results after a failed check.
+- Adds a read-only permission diagnostic script.

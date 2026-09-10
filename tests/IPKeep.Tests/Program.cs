@@ -1022,6 +1022,103 @@ Test("Network bursts wait for quiet, stale callbacks do not wake early, and disp
     Assert(wakes == 2, "Stopped services must not be woken");
 });
 
+FileSecurity PermissionFixture(bool extraAccount = false, bool runtime = false)
+{
+    var acl = new FileSecurity();
+    var admin = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+    acl.SetOwner(admin);
+    foreach (var sid in new[] { admin, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+        acl.AddAccessRule(new(sid, FileSystemRights.FullControl, AccessControlType.Allow));
+    acl.AddAccessRule(new(new SecurityIdentifier(WellKnownSidType.LocalServiceSid, null),
+        runtime ? FileSystemRights.Modify : FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+    if (extraAccount) acl.AddAccessRule(new(new SecurityIdentifier("S-1-5-21-100-200-300-1001"), FileSystemRights.FullControl, AccessControlType.Allow));
+    return acl;
+}
+
+Test("Reported extra-account permission is rejected with connection-specific repair guidance", () =>
+{
+    var acl = PermissionFixture(extraAccount: true);
+    InstallationPermissionException? failure = null;
+    try { DeploymentSecurity.ValidatePermissions(acl, secret: true); }
+    catch (InstallationPermissionException error) { failure = error; }
+    Assert(failure?.ProblemCode == ServiceRecovery.ConnectionPermissions);
+    Assert(failure!.Message.Contains("another account") && !failure.Message.Contains("S-1-5-21"));
+    var snapshot = new ServiceSnapshot().Failed(failure);
+    var recovery = ServiceRecovery.For(snapshot)!;
+    Assert(recovery.Title == "Saved connection permissions need repair" && !recovery.RepairInstallation);
+    Assert(recovery.InstructionsFor(false).Contains("Allow changes") && recovery.InstructionsFor(false).Contains("Save and enable updates"));
+    Assert(!recovery.InstructionsFor(true).Contains("Allow changes"), "Elevated users must not be directed to a hidden button");
+});
+
+Test("Permission classification preserves ownership, secret-read and service-write boundaries", () =>
+{
+    DeploymentSecurity.ValidatePermissions(PermissionFixture(), secret: true);
+    DeploymentSecurity.ValidatePermissions(PermissionFixture(runtime: true), runtime: true);
+    Throws<InstallationPermissionException>(() => DeploymentSecurity.ValidatePermissions(PermissionFixture(runtime: true)));
+    var acl = PermissionFixture();
+    acl.AddAccessRule(new(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+    DeploymentSecurity.ValidatePermissions(acl);
+    Throws<InstallationPermissionException>(() => DeploymentSecurity.ValidatePermissions(acl, secret: true));
+    acl = PermissionFixture();
+    acl.SetOwner(new SecurityIdentifier(WellKnownSidType.LocalServiceSid, null));
+    DeploymentSecurity.ValidatePermissions(acl, runtime: true);
+    Throws<InstallationPermissionException>(() => DeploymentSecurity.ValidatePermissions(acl, secret: true));
+    acl.SetOwner(new SecurityIdentifier("S-1-5-21-100-200-300-1001"));
+    Throws<InstallationPermissionException>(() => DeploymentSecurity.ValidatePermissions(acl, runtime: true));
+});
+
+Test("Program permission failure offers service repair instead of only saving a token", () =>
+{
+    try { DeploymentSecurity.ValidatePermissions(PermissionFixture(extraAccount: true)); }
+    catch (InstallationPermissionException error)
+    {
+        var recovery = ServiceRecovery.For(new ServiceSnapshot().Failed(error))!;
+        Assert(recovery.RepairInstallation && recovery.Instructions.Contains("Repair / update service"));
+        return;
+    }
+    throw new Exception("Unsafe installation permissions were accepted");
+});
+
+Test("Public failure diagnostics do not expose native exception messages", () =>
+{
+    foreach (var error in new Exception[] { new UnauthorizedAccessException(token + " private-path"), new IOException(token), new System.Security.Cryptography.CryptographicException(token) })
+    {
+        var snapshot = new ServiceSnapshot().Failed(error);
+        Assert(!JsonSerializer.Serialize(snapshot).Contains(token));
+        Assert(snapshot.LastAttemptFailed && snapshot.State == "Needs attention");
+        if (error is UnauthorizedAccessException) Assert(snapshot.ProblemCode == ServiceRecovery.Permissions);
+        else Assert(snapshot.ProblemCode is null);
+    }
+});
+
+Test("Failed attempts label retained hostname results and recovery clears only on a completed check", () =>
+{
+    var last = new CheckResult(DateTimeOffset.Now.AddHours(-2), true, false, "8.8.8.8", null, "Up to date", [new("home.a.ipkeep.net", true, true, "DNS published.")]);
+    var snapshot = new ServiceSnapshot().Completed(last).Failed(new InstallationPermissionException(true, "Permissions need repair."));
+    Assert(ReferenceEquals(snapshot.LastCheck, last));
+    Assert(ServiceRecovery.HostMessage(snapshot, "home.a.ipkeep.net").StartsWith("Earlier result ("));
+    Assert(ServiceRecovery.HostMessage(snapshot, "office.a.ipkeep.net").Contains("latest check failed"));
+    var checking = snapshot with { State = "Checking" };
+    Assert(ServiceRecovery.For(checking) is not null && ServiceRecovery.HostMessage(checking, "home.a.ipkeep.net").StartsWith("Earlier result ("));
+    Assert(ServiceRecovery.For(snapshot with { State = "Stopped" }) is not null, "Keep repair guidance if a service cannot start");
+    var recovered = snapshot.Completed(last with { CheckedAt = DateTimeOffset.Now });
+    Assert(!recovered.LastAttemptFailed && ServiceRecovery.For(recovered) is null && recovered.State == "Waiting");
+    Assert(ServiceRecovery.HostMessage(recovered, "home.a.ipkeep.net") == "DNS published.");
+    var networkFailure = snapshot.Completed(last with { Success = false, Message = "Network unavailable", Hosts = [] });
+    Assert(ServiceRecovery.For(networkFailure) is null && networkFailure.State == "Needs attention");
+});
+
+Test("Older status files show cautious setup guidance without assuming every error is permissions", () =>
+{
+    var snapshot = JsonSerializer.Deserialize<ServiceSnapshot>("{\"State\":\"Needs attention\",\"Message\":\"" + ServiceRecovery.LegacyFailureMessage + "\"}")!;
+    Assert(snapshot.ProblemCode is null && !snapshot.LastAttemptFailed);
+    Assert(ServiceRecovery.For(snapshot)!.Title == "Connection setup needs attention");
+    Assert(ServiceRecovery.For(snapshot with { Message = "Network unavailable" }) is null);
+    Assert(ServiceRecovery.For(snapshot with { State = "Waiting" }) is null);
+    var saved = new ServiceSnapshot().Failed(new InstallationPermissionException(true, "Private permissions need repair"));
+    Assert(ServiceRecovery.For(JsonSerializer.Deserialize<ServiceSnapshot>(JsonSerializer.Serialize(saved))!)!.Title == "Saved connection permissions need repair");
+});
+
 foreach (var test in tests)
 {
     try { await test.Run(); Console.WriteLine("PASS " + test.Name); passed++; }

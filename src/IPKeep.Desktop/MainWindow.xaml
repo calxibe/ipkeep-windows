@@ -71,7 +71,7 @@
                     <Border Style="{StaticResource Card}">
                         <StackPanel Spacing="18">
                             <StackPanel Orientation="Horizontal" Spacing="10"><Ellipse x:Name="StatusDot" Width="9" Height="9" Style="{StaticResource NeutralStatusDot}" /><TextBlock x:Name="StatusLabel" Text="Ready to set up" FontWeight="SemiBold" Foreground="{ThemeResource Muted}" /></StackPanel>
-                            <TextBlock x:Name="StatusTitle" Text="Keep your connections current." FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="StatusTitle" Text="Keep your connections current." FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                             <TextBlock x:Name="StatusMessage" Text="Add your IPKeep API token in Settings, then choose a hostname from your account." TextWrapping="Wrap" Foreground="{ThemeResource Muted}" LineHeight="23" />
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <Button x:Name="PrimaryAction" Content="Set up IPKeep" Style="{StaticResource AccentButtonStyle}" Click="Primary_Click" Padding="20,10" />
@@ -87,7 +87,7 @@
                             <StackPanel Spacing="8"><TextBlock Text="PUBLIC IPv4" FontSize="11" Foreground="{ThemeResource Muted}" /><TextBlock x:Name="IPv4Text" Text="Checking…" FontSize="18" IsTextSelectionEnabled="True" /><TextBlock x:Name="IPv4Hint" Text="Looking up this connection" FontSize="12" Foreground="{ThemeResource Muted}" TextWrapping="Wrap" /></StackPanel>
                             <StackPanel Grid.Column="1" Spacing="8"><TextBlock Text="PUBLIC IPv6" FontSize="11" Foreground="{ThemeResource Muted}" /><TextBlock x:Name="IPv6Text" Text="Checking…" TextWrapping="Wrap" IsTextSelectionEnabled="True" /><TextBlock x:Name="IPv6Hint" Text="Looking up this connection" FontSize="12" Foreground="{ThemeResource Muted}" TextWrapping="Wrap" /></StackPanel>
                             <Grid Grid.Row="1" Grid.ColumnSpan="2" ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock x:Name="LookupSourceText" Text="IP lookup: IPKeep. No token needed." FontSize="12" Foreground="{ThemeResource Muted}" TextWrapping="Wrap" VerticalAlignment="Center" /><Button x:Name="RefreshAddressesButton" Grid.Column="1" Content="Refresh addresses" Click="RefreshAddresses_Click" /></Grid>
-                            <StackPanel Grid.Row="2" Spacing="8"><TextBlock Text="LAST HOST UPDATE CHECK" FontSize="11" Foreground="{ThemeResource Muted}" /><TextBlock x:Name="LastCheckText" Text="—" /></StackPanel>
+                            <StackPanel Grid.Row="2" Spacing="8"><TextBlock Text="LAST COMPLETED HOST CHECK" FontSize="11" Foreground="{ThemeResource Muted}" /><TextBlock x:Name="LastCheckText" Text="—" /></StackPanel>
                             <StackPanel Grid.Row="2" Grid.Column="1" Spacing="8"><TextBlock Text="NEXT HOST UPDATE CHECK" FontSize="11" Foreground="{ThemeResource Muted}" /><TextBlock x:Name="NextCheckText" Text="—" /></StackPanel>
                         </Grid>
                     </Border>
@@ -99,6 +99,7 @@
             </ScrollViewer>
             <ScrollViewer x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="22" Padding="0,0,8,8">
+                    <InfoBar x:Name="ConnectionRecoveryBanner" IsOpen="False" IsClosable="False" Severity="Warning" />
                     <StackPanel Spacing="6"><TextBlock x:Name="ConnectionTitle" Text="Set up this computer." Style="{StaticResource PageTitle}" TextWrapping="Wrap" /><TextBlock x:Name="ConnectionSubtitle" Text="Install the background service and verify your token to finish setup." Foreground="{ThemeResource Muted}" TextWrapping="Wrap" /></StackPanel>
                     <Border Style="{StaticResource Card}"><StackPanel Spacing="12">
                         <TextBlock Text="1. Background service" Style="{StaticResource SectionTitle}" />
