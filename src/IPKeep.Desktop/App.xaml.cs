@@ -15,6 +15,9 @@ public partial class App : Application
             Exit();
             return;
         }
+#if DEBUG
+        if (arguments.Contains("--diagnostics-preview")) { window = DiagnosticPreview.Open(); return; }
+#endif
         window = new MainWindow(arguments.Contains("--settings")); window.Activate();
     }
 }

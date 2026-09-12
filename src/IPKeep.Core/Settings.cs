@@ -6,6 +6,7 @@ namespace IPKeep.Core;
 
 public sealed record ClientSettings
 {
+    public static readonly string[] SupportedDomains = ["a.ipkeep.net", "ipkeep.cloud", "checkup247.com"];
     public const int MaximumHostnames = 5;
     public string[] Hostnames { get; init; } = [];
     public int IntervalMinutes { get; init; } = 360;
@@ -34,10 +35,10 @@ public sealed record ClientSettings
     public static string NormalizeHostname(string input)
     {
         var name = (input ?? "").Trim().ToLowerInvariant();
-        const string suffix = ".a.ipkeep.net";
+        var suffix = SupportedDomains.Select(domain => "." + domain).FirstOrDefault(candidate => name.EndsWith(candidate, StringComparison.Ordinal)) ?? ".a.ipkeep.net";
         var label = name.EndsWith(suffix, StringComparison.Ordinal) ? name[..^suffix.Length] : name;
         if (!Regex.IsMatch(label, @"\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z", RegexOptions.CultureInvariant))
-            throw new SettingsException("Use a hostname such as home or home.a.ipkeep.net. Custom domains are not supported.");
+            throw new SettingsException("Use a hostname such as home.a.ipkeep.net or home.ipkeep.cloud. A short name uses a.ipkeep.net.");
         return label + suffix;
     }
 

@@ -12,9 +12,10 @@ public interface IPublicIpResolver { Task<string> ResolveAsync(bool ipv6, Cancel
 public interface IUpdateClient { Task<UpdateReply> UpdateAsync(string token, string hostname, string? ipv4, string? ipv6, CancellationToken cancellationToken); }
 public interface IHostListClient { Task<string[]> ListHostsAsync(string token, CancellationToken cancellationToken); }
 public sealed record UpdateReply(bool Changed, bool DnsUpdated);
-public sealed class UpdateException(string message, bool authenticationFailure = false) : Exception(message)
+public sealed class UpdateException(string message, bool authenticationFailure = false, int? statusCode = null) : Exception(message)
 {
     public bool AuthenticationFailure { get; } = authenticationFailure;
+    public int? StatusCode { get; } = statusCode;
 }
 
 public static class NetworkClients
@@ -56,6 +57,7 @@ public sealed class IpKeepClient(HttpClient http, IActivityLog log) : IUpdateCli
         token = ClientSettings.ValidateToken(token);
         using var request = new HttpRequestMessage(HttpMethod.Get, HostsEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("X-IPKeep-Domains", string.Join(",", ClientSettings.SupportedDomains));
         request.Headers.UserAgent.ParseAdd("IPKeep-Windows/1.0");
         var watch = Stopwatch.StartNew();
         try

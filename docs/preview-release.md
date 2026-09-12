@@ -1,3 +1,6 @@
-- Explains connection and installation permission problems with a Fix in Settings action.
-- Shows repair steps and marks saved hostname results as earlier results after a failed check.
-- Adds a read-only permission diagnostic script.
+- Adds authenticated Diagnostics for every permitted hostname, combining Windows observations with tests from Frankfurt and Virginia.
+- Adds service presets, local device/port mappings, saved test settings, report history and detailed timings.
+- Checks router WAN addresses using read-only UPnP/NAT-PMP, with manual fallback and cautious CGNAT, double-NAT and VPN guidance.
+- Adds a bounded local traceroute with hop timings in Full details.
+- Respects the selected IP lookup service, skips unsupported IPv6 discovery and never substitutes another provider after failure.
+- Supports ipkeep.cloud and checkup247.com alongside existing a.ipkeep.net hosts, and improves button and dropdown layout.

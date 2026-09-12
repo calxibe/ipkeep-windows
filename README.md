@@ -2,15 +2,33 @@
 
 A native WinUI 3 app and Windows background service that keep your [IPKeep](https://ipkeep.net/) dynamic DNS hostnames updated automatically. Connect with your own IPKeep API token, choose up to five existing hostnames, and let the service check your public IP in the background.
 
-**Version 1.0.0 Preview 8** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
+**Version 1.0.0 Preview 12** · Windows 10 version 2004 or later / Windows 11 · x64 · [MIT license](LICENSE)
 
 [Build status](https://github.com/calxibe/ipkeep-windows/actions/workflows/build.yml) · [Preview downloads](https://github.com/calxibe/ipkeep-windows/releases) · [Code signing policy](CODE_SIGNING.md) · [Privacy](PRIVACY.md)
 
-This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. This release adds permission warnings and guided repair. Automatic update downloads with user-approved installation are included. A signed installer and Microsoft Store distribution are not available yet. Preview 3–6 support update notifications and manual downloads; Preview 1–2 have no update checker. Install the current preview once to receive automatic downloads for future releases.
+This repository contains the Windows client and service. An **unsigned beta installer** is provided for testing, alongside the folder/ZIP distribution. This release adds authenticated network diagnostics, read-only router WAN discovery and a local traceroute, while retaining permission warnings and guided repair. Automatic update downloads with user-approved installation are included. A signed installer and Microsoft Store distribution are not available yet. Preview 3–6 support update notifications and manual downloads; Preview 1–2 have no update checker. Install the current preview once to receive automatic downloads for future releases.
 
 ![IPKeep Overview with fictional example addresses](docs/images/overview.png)
 
 *Illustrative preview with fictional account, address, and activity data; it is not a live account capture.* [Settings preview](docs/images/settings.png) · [Activity preview](docs/images/activity.png)
+
+## Preview 12: network diagnostics
+
+A **Diagnostics** button beside each configured hostname opens a native network diagnostic. Every active API token can run diagnostics for its permitted hostnames; no separate permission needs enabling. Paused and revoked tokens are rejected. Normal address updates are unaffected.
+
+Select **Test host** to collect this computer's public addresses, Windows DNS answers, selected local listeners, gateway ping and updater-service state, then request the existing Frankfurt/Virginia checks. The dialog shows incremental results, findings, automatic Cloudflare/Google DNS lookups, previous tests from this token, and a copyable monospace Full details report. Data sources are identified; unavailable readings do not count as successful tests.
+
+Diagnostics uses the same currently selected **IP lookup service** as Overview. Its provider ID is saved with each report, and address results name that provider. Amazon Check IP is IPv4-only, so IPv6 address discovery is skipped; saved AAAA records and external IPv6 checks remain independent. A lookup failure stays unverified without falling back to a different provider. This matters with VPNs or multiple Internet connections, where different lookup services can observe different exit addresses. Background updates continue to use the selection saved in Settings. Preview 10 and earlier hard-coded diagnostics to IPKeep; run a new test with Preview 12 to collect corrected observations. Older reports remain unchanged.
+
+**Advanced** shares the website's service selections and website hostname (HTTP Host/TLS name). Choose from 13 presets or a supported custom test/port. A blank Local device means this computer. For another device enter a private LAN IP; Local port may differ from Public port. Mappings are encrypted with DPAPI for this Windows user and scoped to the token/hostname. Manual WAN addresses are fallback-only and are never saved/restored as current evidence. Automatic replies take precedence. No firewall rules or port mappings are changed. Generic UDP/VPN reachability is not inferred from silence.
+
+**Router WAN / CGNAT (Preview 12):** each test tries read-only UPnP `GetExternalIPAddress` and NAT-PMP external-address discovery against up to four configured on-link IPv4 gateways, within six seconds. Replies are bounded and pinned to the gateway; arbitrary URLs, redirects, credentials and XML entities are refused. Conflicting replies, possible VPN adapters and multiple gateways keep the conclusion inconclusive. A shared WAN (`100.64.0.0/10`) means CGNAT is likely; a private WAN may mean home double NAT or ISP NAT. A matching public WAN/lookup means no upstream IPv4 NAT was detected on that connection, without guaranteeing incoming reachability. VPN detection is best effort. If discovery is unavailable, enter the current WAN IPv4 from the router's Internet status in Advanced.
+
+**Local traceroute:** Full details includes up to 12 IPv4 ICMP hops toward the selected lookup service, with one sample per hop, response time and explicit missing replies. The entire trace stops after seven seconds. This is a separate ICMP sample to a DNS-resolved provider address; HTTPS may follow a different path. Private/shared/silent hops never establish CGNAT. AWS-to-host traces remain separate.
+
+Testing needs no elevation or new inbound listener. Authentication and current host access are checked on every API operation. Windows and browser jobs share account/target/global quotas (two pending jobs, six per ten minutes, 50 daily per account). Pausing/revoking a token or removing host permission cancels its pending work. Closing the dialog stops polling; an accepted regional job can finish. **Retry same test** preserves the UUID and original observations after an uncertain submission.
+
+Local snapshots are uploaded only for a user-requested test and retained with its report for seven days; see [privacy](PRIVACY.md). Reports can also be viewed from the website's host diagnostics history. This source has an isolated Debug-only `--diagnostics-preview` fixture; it sends no network requests and never reads saved credentials. It is absent from release builds.
 
 ## Preview 8 changes
 
@@ -30,7 +48,7 @@ The existing Windows approval and file-permission checks remain required. Repair
 
 The service wakes its existing single-check queue after local network-address changes or restored connectivity, following a 10-second quiet period. Bursts are coalesced; stopped services stay stopped, and rejected credentials still require a replacement token or manual check. Periodic discovery remains necessary: a router's public WAN address can change without a local interface event.
 
-The API can now restrict tokens to selected hostnames. Existing tokens keep all-host access; the Windows selector naturally shows only enabled, permitted hosts. Deleting and recreating a hostname does not restore a selected token's old permission. The Windows app continues to use only Bearer-authenticated hostname listing and JSON updates.
+The API can restrict tokens to selected hostnames; the Windows selector shows only enabled, permitted hosts. Deleting and recreating a hostname does not restore a selected token's old permission. Host listing, JSON updates and diagnostics use Bearer authentication with the same host scope.
 
 ## Features
 
@@ -92,11 +110,11 @@ Installer downloads use the exact version's `SHA256SUMS.txt` and `IPKeep-<versio
 
 ## Network contract
 
-Customer API tokens authorize exactly two operations: hostname listing and address updates. `GET https://api.ipkeep.net/hosts` returns `{ "hosts": [{ "hostname": "home.a.ipkeep.net" }] }` for the token owner's active hostnames permitted by its scope, or an empty array. The client accepts only valid managed hostnames, binds the selection to the token that loaded the list, and retrieves the list again before saving. Empty, failed, or stale lists cannot enable updates.
+Customer API tokens authorize hostname listing, address updates and host-scoped diagnostics. `GET https://api.ipkeep.net/hosts` returns `{ "hosts": [{ "hostname": "home.ipkeep.cloud" }] }` for the token owner's active hostnames permitted by its scope, or an empty array. The client accepts only valid managed hostnames, binds the selection to the token that loaded the list, and retrieves the list again before saving. Empty, failed, or stale lists cannot enable updates.
 
-Updates are `POST https://api.ipkeep.net/update`, with JSON containing `hostname` and the available `ipv4` / `ipv6` fields. Both authenticated endpoints use `Authorization: Bearer <IPKeep token>`. Redirects and cookies are disabled. Their URLs are fixed; there is no editable URL that could receive the token. HTTP response bodies, authentication headers, and tokens are never logged. A 401/403 asks for a new or enabled token; a 404 asks the user to check the hostname/account/paused state.
+Updates are `POST https://api.ipkeep.net/update`, with JSON containing `hostname` and the available `ipv4` / `ipv6` fields. Authenticated endpoints use `Authorization: Bearer <IPKeep token>`. Redirects and cookies are disabled. Their URLs are fixed; there is no editable URL that could receive the token. HTTP response bodies, authentication headers, and tokens are never logged. A 401/403 asks for a new or enabled token; a 404 asks the user to check the hostname/account/paused state.
 
-Client tokens cannot create, delete, rename, enable, or pause hostnames; manage accounts, tokens, authentication or sessions; read account activity; or access internal DNS-node routes. Hostname management requires the admin panel's authenticated browser session. `/ip` and `/version` are anonymous, not additional token capabilities. Keep this two-operation token boundary when proposing changes. The Windows client contains no infrastructure credentials and makes no direct DNS-provider API requests.
+Client tokens cannot create, delete, rename, enable, or pause hostnames; manage accounts, tokens, authentication or sessions; read account activity; or access internal DNS-node routes. Hostname management requires the admin panel's authenticated browser session. `/ip` and `/version` are anonymous, not additional token capabilities. Keep hostname management separate from these host-scoped client operations. The Windows client contains no infrastructure credentials and makes no direct DNS-provider API requests.
 
 Public IP discovery sends anonymous HTTPS GET requests to the selected provider. No lookup provider receives the IPKeep token, hostname, or update body. The free alternatives use these documented endpoints:
 
@@ -172,7 +190,7 @@ Building never installs, starts, or stops a service and does not send production
 
 ## Validation and remaining release checks
 
-The current source has 86 isolated tests, including permission diagnostics, access-control boundaries, safe public messages, retained hostname history and recovery. Other tests cover installer checksum failures, corruption/truncation, size limits, trusted redirects, cache reuse/tampering, Internet-zone marking, cancellation, launch validation and per-user preferences. The launch test substitutes a callback and never executes the fixture bytes. The suite also covers HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
+The current source has 88 isolated tests, including permission diagnostics, access-control boundaries, safe public messages, retained hostname history and recovery. Other tests cover installer checksum failures, corruption/truncation, size limits, trusted redirects, cache reuse/tampering, Internet-zone marking, cancellation, launch validation and per-user preferences. The launch test substitutes a callback and never executes the fixture bytes. The suite also covers HTTP/token boundaries, one-to-five hostname selection, restoring multiple selections, automatic single-host selection, fresh validation of every selected hostname, updates to all five hosts, provider behavior, storage and encryption, scheduling/backoff and stopping retries for rejected tokens, log handling, Activity timestamp formatting, installer command/cleanup boundaries, and application update checks. Update tests include semantic version ordering, stable/preview selection, empty feeds, malformed/oversized metadata, plain-text notes, fixed destinations, anonymous requests, partial failures, timeouts, and cancellation. Native layouts and live anonymous discovery/release feeds have also been inspected during development.
 
 The GitHub Windows build compiles the installer using [Inno Setup](https://jrsoftware.org/isinfo.php) and runs `tests/IPKeep.InstallerTests` on a disposable administrator runner. That suite exercises fresh setup, shortcuts, Installed Apps registration, running/paused/disabled service upgrades, a blocked service update and repair, downgrade/path refusal, uninstall, reinstall, and retention of settings/connection/activity files. Its deliberately invalid encrypted connection cannot authorize DNS updates. The suite refuses to run on a normal workstation or one with existing IPKeep files/data. Installer logs are retained as a separate build artifact.
 
@@ -195,8 +213,12 @@ Removing the client does not delete your IPKeep account or hostnames. Revoke its
 
 Use [GitHub issues](https://github.com/calxibe/ipkeep-windows/issues) for reproducible client bugs and feature requests. Run the isolated tests and build before submitting changes. Do not include real tokens, private settings, or unredacted activity logs in issues or pull requests.
 
-For account help or to report a security issue privately, use [IPKeep support](https://fixquotes.com/docs/contact/?category=ipkeep).
+For account help or to report a security issue privately, use [IPKeep support](https://apps.fixquotes.com/contact/?category=ipkeep).
 
 ## License
 
 IPKeep's own source is released under the [MIT License](LICENSE). Third-party packages retain their own licenses; bundled Windows App SDK redistributables are covered by Microsoft terms. The build includes available dependency license files, notices, and NuGet license metadata under `third-party` in the download. This repository does not grant access to the hosted IPKeep service; users supply their own account token.
+
+## Preview 9 source — additional hostname domain
+
+The prepared Preview 9 source accepts `ipkeep.cloud`, `a.ipkeep.net` and `checkup247.com` in the permitted hostname chooser and service settings. It advertises all three domains to the fixed IPKeep API. API token scopes and ownership still determine which hosts are returned. Preview 8 and earlier receive only a.ipkeep.net hosts, so adding a cloud hostname does not break their existing connections. All 88 isolated tests pass; the desktop and service build locally. Publication requires the owner's explicit consent; Preview 8 remains the published release until then.

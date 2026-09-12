@@ -9,9 +9,14 @@ using System.Globalization;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
+if (args.Contains("--live-diagnostics")) { await DiagnosticSmoke.RunAsync(); return; }
+if (args.Contains("--live-router-diagnostics")) { await DiagnosticSmoke.RunRouterAsync(); return; }
+
 const string token = "ipkeep_test_token_0123456789";
 int passed = 0;
 var tests = new List<(string Name, Func<Task> Run)>();
+DiagnosticTests.Register(tests);
+RouterDiagnosticsTests.Register(tests);
 void Test(string name, Action action) => tests.Add((name, () => { action(); return Task.CompletedTask; }));
 void AsyncTest(string name, Func<Task> action) => tests.Add((name, action));
 void Assert(bool condition, string message = "Assertion failed") { if (!condition) throw new Exception(message); }
@@ -22,6 +27,21 @@ HttpResponseMessage Json(string content, HttpStatusCode code = HttpStatusCode.OK
 string Reply(string name = "home.a.ipkeep.net", bool dns = false) => JsonSerializer.Serialize(new { success = true, changed = true, hostname = name, dnsUpdated = dns });
 
 Test("Normalizes short and full hostnames; removes duplicates", () => Assert(Settings(" HOME ", "home.a.ipkeep.net", "office").Validate().Hostnames.SequenceEqual(new[] { "home.a.ipkeep.net", "office.a.ipkeep.net" })));
+Test("Supports cloud hostnames alongside legacy names without merging the same label", () =>
+{
+    Assert(Settings("home", " HOME.IPKEEP.CLOUD ", " HOME.CHECKUP247.COM ").Validate().Hostnames.SequenceEqual(new[] { "home.a.ipkeep.net", "home.ipkeep.cloud", "home.checkup247.com" }));
+    foreach (var name in new[] { "ipkeep.cloud", "x.home.ipkeep.cloud", "home.ipkeep.cloud.evil.net", "checkup247.com", "x.home.checkup247.com", "home.checkup247.com.evil.net" }) Throws<SettingsException>(() => Settings(name).Validate());
+});
+AsyncTest("Advertises supported domains and parses mixed-domain host lists", async () =>
+{
+    using var http = new HttpClient(new FakeHttp(request =>
+    {
+        Assert(request.Headers.GetValues("X-IPKeep-Domains").Single() == "a.ipkeep.net,ipkeep.cloud,checkup247.com");
+        return Task.FromResult(Json("{\"hosts\":[{\"hostname\":\"home.ipkeep.cloud\"},{\"hostname\":\"home.a.ipkeep.net\"},{\"hostname\":\"home.checkup247.com\"}]}"));
+    }));
+    var names = await new IpKeepClient(http, new MemoryLog()).ListHostsAsync(token, default);
+    Assert(names.SequenceEqual(new[] { "home.a.ipkeep.net", "home.checkup247.com", "home.ipkeep.cloud" }));
+});
 Test("Rejects custom domains, nested labels and invalid names", () =>
 {
     foreach (string name in new[] { "", "evil.com", "x.home.a.ipkeep.net", "-home", "home-", "h_ome", "home.a.ipkeep.net.evil.com", "*", new string('a', 64) }) Throws<SettingsException>(() => Settings(name).Validate());
